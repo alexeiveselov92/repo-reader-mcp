@@ -1,0 +1,24 @@
+# A DRAFT of the configuration (docs/DESIGN.md) — not read by the server yet. Made-up names only.
+# Secrets are named by the environment variable that holds them, never written here.
+
+repositories:
+  - name: shop-backend
+    url: https://github.com/acme/shop-backend.git
+    token_env: GITHUB_TOKEN             # read-only
+    refs: [main, "release/*"]           # kept fresh; any other commit readable on demand
+    include: ["src/**", "docs/**"]      # only these paths are ever fetched
+    exclude: ["**/fixtures/**"]
+
+  - name: shop-frontend
+    url: https://gitlab.example.com/acme/shop-frontend.git
+    token_env: GITLAB_TOKEN
+    refs: [main]
+
+  - name: local-notes
+    path: /srv/notes                    # a local checkout, read as it is
+
+sync:
+  every_minutes: 10
+
+limits:
+  answer_characters: 40000              # clients cut long answers; a cut answer says so

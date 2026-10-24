@@ -1,0 +1,39 @@
+[project]
+name = "repo-reader-mcp"
+version = "0.0.1"
+description = "A read-only MCP server for code in git repositories — files, branches, history, diffs, blame and search — for any MCP client and any code host."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [{ name = "Aleksei Veselov" }]
+keywords = ["mcp", "model-context-protocol", "git", "code-search", "ai-agents"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Version Control :: Git",
+]
+dependencies = ["mcp>=2.3,<3"]
+
+[project.urls]
+Repository = "https://github.com/alexeiveselov92/repo-reader-mcp"
+
+[project.scripts]
+repo-reader-mcp = "repo_reader_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
