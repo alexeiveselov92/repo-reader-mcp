@@ -18,28 +18,36 @@ with something visible: a real agent answering through the server.
 - [ ] Tests on made-up repositories built by the tests themselves (real git, no network).
 - [ ] Real Claude Code over stdio answers questions about a test repository.
 
-## Milestone 2. Remote repositories — 2 sessions
+## Milestone 2. The docs site — 1 session
+
+- [ ] `website/` — Astro + Starlight built from `docs/`, the author's detectkit pattern (`../detectkit/website`: the
+      `sync-docs` script importing `docs/`, the nginx Dockerfile, the `website.yml` workflow pushing the image to GHCR and
+      sending `repository_dispatch` to pipelab).
+- [ ] In pipelab (`../pipelab`, under its own rules): the site at `repo-reader.pipelab.dev` — a compose service
+      behind Traefik and its `deploy-*.yml`, as detectkit's site is served.
+- [ ] The guide as it stands after milestone 1 published there; from now on every milestone's pages go live with it.
+
+## Milestone 3. Remote repositories — 2 sessions
 
 - [ ] Mirrors: partial clones from any git URL, a token by variable name, `refs` kept fresh on a schedule,
       force-pushes followed; `include` / `exclude`; nothing fetched outside them (counted from the mirror).
 - [ ] Hosts: GitHub, GitLab, any git server — links to the host's pages where it has them.
 - [ ] Streamable HTTP with a bearer token; a second MCP client checked (not Claude).
 
-## Milestone 3. Search and safety — 2 sessions
+## Milestone 4. Search and safety — 2 sessions
 
 - [ ] `search` across repositories (an index), `grep` with allow-listed commands.
 - [ ] The secret scan before serving; files named for credentials never fetched.
 - [ ] A refuting review of the safety (a second reader whose job is to break it); every protection with a
       test that fails when it is removed.
 
-## Milestone 4. The site and the author's server — 1 session
+## Milestone 5. The author's server instance — 1 session
 
-- [ ] `website/` — Astro + Starlight built from `docs/` (detectkit's pattern), its image on GHCR, CI sending
-      `repository_dispatch` to `alexeiveselov92/pipelab`.
-- [ ] In pipelab: the site at `repo-reader.pipelab.dev` and an instance of the server (its image, `/mcp` with no
-      redirect), each with its `deploy-*.yml`; secrets prefixed in GitHub.
+- [ ] In pipelab: an instance of the server (its image from GHCR, `/mcp` routed with no redirect, a token or the
+      organisation's gateway in front), its `deploy-*.yml`, secrets prefixed in GitHub — for the author's own use and a
+      public demo over made-up data.
 
-## Milestone 5. Release — 1 session
+## Milestone 6. Release — 1 session
 
 - [ ] Published on PyPI (`uvx repo-reader-mcp`), a container image, docs for agents and for people who
       run it; a versioned release.

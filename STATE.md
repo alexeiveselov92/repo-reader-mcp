@@ -9,8 +9,8 @@
 ## What exists
 
 - The repository (public, Apache-2.0), README; `dev/` — design, plan, decisions, research; `docs/` — the public
-  documentation's source (the site comes in a later milestone, hosted through the author's pipelab); the session
-  flow (`CLAUDE.md`, `/start`, `/close`).
+  documentation's source, with `docs/reference/tools.md` held by a test (every tool has its entry); the session flow
+  (`CLAUDE.md`, `/start`, `/close` — the guide checked at close, context only in the repository, pushed).
 - A skeleton: the server over stdio (`uv run repo-reader-mcp`) with one tool, `about`; its tests through the
   SDK's in-process client (every tool read-only; `about` answers); ruff; CI on GitHub Actions.
 - A draft of the configuration: `examples/config.example.yaml`.
@@ -20,6 +20,9 @@
 Milestone 1: the YAML configuration and its check, then the reading tools over one local repository
 (`list_repos`, `list_refs`, `read_file`, `list_files`, `log`, `show_commit`, `diff`, `blame`) — tested on
 made-up repositories the tests build, then real Claude Code over stdio.
+
+Then milestone 2: the docs site (Astro + Starlight like detectkit's, served by pipelab) — the guide on the web from
+the first tools on.
 
 ## What the author needs to do
 
