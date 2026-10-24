@@ -1,18 +1,18 @@
 # Getting started
 
 repo-reader-mcp lets an AI agent read git repositories — any branch, tag or commit, the history, diffs, blame — and
-never change them. This page runs it from a clone of its source, over stdio, for one person's agent. (A published
-package and a container image come later.)
+never change them. This page runs it over stdio, for one person's agent. (A container image comes later.)
 
 ## 1. Get it
 
-You need git 2.31 or newer, Python 3.12 and [uv](https://docs.astral.sh/uv/).
+You need git 2.31 or newer and Python 3.12 or newer. With [uv](https://docs.astral.sh/uv/), there is nothing to install:
+`uvx repo-reader-mcp` fetches it and runs it. Or install it into an environment of your own:
 
 ```bash
-git clone https://github.com/alexeiveselov92/repo-reader-mcp.git
-cd repo-reader-mcp
-uv sync
+pip install repo-reader-mcp
 ```
+
+(From a clone of its source: `uv sync`, then `uv run repo-reader-mcp …` — what contributors do.)
 
 ## 2. Say which repositories it reads
 
@@ -33,7 +33,7 @@ A repository on a host is [mirrored](remote-repositories.md) on your machine —
 files it serves. Check the file (for a remote repository, it also asks the host whether it answers):
 
 ```bash
-uv run repo-reader-mcp --config ~/repo-reader.yaml --check
+uvx repo-reader-mcp --config ~/repo-reader.yaml --check
 ```
 
 The server makes the mirrors in the background when it starts; to make them now and see how it went, run it once with
@@ -44,7 +44,7 @@ The server makes the mirrors in the background when it starts; to make them now 
 **Claude Code:**
 
 ```bash
-claude mcp add repo-reader -- uv --directory /path/to/repo-reader-mcp run repo-reader-mcp --config ~/repo-reader.yaml
+claude mcp add repo-reader -- uvx repo-reader-mcp --config ~/repo-reader.yaml
 ```
 
 **Any other MCP client** (Claude Desktop, Cursor, Codex, …) takes the same command in its MCP settings — for example:
@@ -53,8 +53,8 @@ claude mcp add repo-reader -- uv --directory /path/to/repo-reader-mcp run repo-r
 {
   "mcpServers": {
     "repo-reader": {
-      "command": "uv",
-      "args": ["--directory", "/path/to/repo-reader-mcp", "run", "repo-reader-mcp", "--config", "/home/you/repo-reader.yaml"]
+      "command": "uvx",
+      "args": ["repo-reader-mcp", "--config", "/home/you/repo-reader.yaml"]
     }
   }
 }

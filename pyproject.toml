@@ -1,6 +1,6 @@
 [project]
 name = "repo-reader-mcp"
-version = "0.0.1"
+version = "0.1.0"
 description = "A read-only MCP server for code in git repositories — files, branches, history, diffs, blame and search — for any MCP client and any code host."
 readme = "README.md"
 license = "Apache-2.0"
@@ -10,7 +10,12 @@ authors = [{ name = "Aleksei Veselov" }]
 keywords = ["mcp", "model-context-protocol", "git", "code-search", "ai-agents"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: POSIX",
+  "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Software Development :: Version Control :: Git",
 ]
 dependencies = [
@@ -20,7 +25,11 @@ dependencies = [
 ]
 
 [project.urls]
+Homepage = "https://repo-reader.pipelab.dev"
+Documentation = "https://repo-reader.pipelab.dev/getting-started/"
 Repository = "https://github.com/alexeiveselov92/repo-reader-mcp"
+Changelog = "https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/CHANGELOG.md"
+Issues = "https://github.com/alexeiveselov92/repo-reader-mcp/issues"
 
 [project.scripts]
 repo-reader-mcp = "repo_reader_mcp.server:main"
@@ -28,6 +37,9 @@ repo-reader-mcp = "repo_reader_mcp.server:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/docs", "/examples", "/README.md", "/CHANGELOG.md", "/LICENSE"]
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]

@@ -67,8 +67,9 @@ with something visible: a real agent answering through the server.
 
 ## Milestone 7. Release — 1 session
 
-- [ ] Published on PyPI (`uvx repo-reader-mcp`), a container image, docs for agents and for people who
-      run it; a versioned release.
+- [x] Published on PyPI (`uvx repo-reader-mcp`): 0.1.0, 2026-10-24 — moved ahead at the author's word; the
+      `publish` workflow releases a tag `v*` by trusted publishing.
+- [ ] A container image (milestone 6), docs for agents and for people who run it; the next versioned releases.
 
 ## Later
 
