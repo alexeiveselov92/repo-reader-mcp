@@ -39,9 +39,9 @@
 
 ## Next step
 
-- **0.1.0 on PyPI**: everything is ready (`publish` workflow, trusted publishing, the wheel checked through `uvx`); the
-  tag `v0.1.0` is pushed once the author adds the pending publisher on PyPI (`repo-reader-mcp`, owner
-  `alexeiveselov92`, workflow `publish.yml`, environment `pypi`).
+- **0.1.0 is on PyPI** (2026-10-24): `uvx repo-reader-mcp` installs it — checked from PyPI in a clean environment. A
+  new version: bump `version` in `pyproject.toml`, `uv lock`, a CHANGELOG line, then push a tag `v<version>`; the
+  `publish` workflow tests, checks the tag names the version, and publishes by trusted publishing.
 - **Milestone 6 — ready to deploy**: a container image on GHCR (built by CI), a health endpoint, the guide's page on
   running it in a container behind an MCP gateway — proved by the company installation kept in its own repository.
   The landing page (milestone 5) is done.
