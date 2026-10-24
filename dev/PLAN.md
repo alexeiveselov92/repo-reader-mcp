@@ -50,11 +50,14 @@ with something visible: a real agent answering through the server.
 - [x] A refuting review of the safety (a second reader whose job is to break it); every protection with a
       test that fails when it is removed (2026-10-24: 11 findings, all closed).
 
-## Milestone 5. The author's server instance — 1 session
+## Milestone 5. Ready to deploy, proved by a real installation — 1 session
 
-- [ ] In pipelab: an instance of the server (its image from GHCR, `/mcp` routed with no redirect, a token or the
-      organisation's gateway in front), its `deploy-*.yml`, secrets prefixed in GitHub — for the author's own use and a
-      public demo over made-up data.
+- [ ] A container image of the server on GHCR (`ghcr.io/alexeiveselov92/repo-reader-mcp`), built by CI on every push:
+      the configuration and the mirrors' folder mounted, secrets by environment; a health endpoint for a gateway or an
+      orchestrator; the guide's page on running it in a container and behind an MCP gateway.
+- [ ] Proved by a company applying it in its own repositories — its configuration, guidance and deployment kept
+      there, never here. What it needs that the server lacks comes back as general requirements, shown with made-up
+      examples. (pipelab hosts the docs site only, not an instance.)
 
 ## Milestone 6. Release — 1 session
 

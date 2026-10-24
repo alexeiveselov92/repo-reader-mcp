@@ -57,10 +57,9 @@ person-day estimates — sessions. Every session ends with something visible.
   (`../detectkit/website` when the author's repositories sit side by side). `cd website && npm ci && npm run build`
   builds it (`npm run dev` serves it while editing); `scripts/sync-docs.mjs` lists the pages — a new page of `docs/`
   goes into its `PAGES` and the sidebar in `astro.config.mjs`, or the build and `tests/test_docs.py` fail.
-- **Hosting is the author's pipelab** (`../pipelab` beside it — private, with its own `CLAUDE.md`): a Docker Compose
-  service behind Traefik per site and per server instance, secrets prefixed in GitHub, a `deploy-<name>.yml` that
-  redeploys on this project's `repository_dispatch`. A change there follows pipelab's own rules — read its `CLAUDE.md`
-  first.
+- **The docs site is hosted by the author's pipelab** (`../pipelab` beside it — private, with its own `CLAUDE.md`):
+  its `repo-reader-web` service redeploys on this project's `repository_dispatch`. pipelab runs no instance of the
+  server. A change there follows pipelab's own rules — read its `CLAUDE.md` first.
 - Any other installation runs the published image its own way; nothing here assumes pipelab.
 
 ## Where requirements come from

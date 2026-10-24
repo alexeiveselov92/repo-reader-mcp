@@ -248,9 +248,8 @@ the MCP Inspector (the TypeScript SDK's client), over stdio and HTTP.
 - **Hosting (the author's own)**: the author's server is run as code in `alexeiveselov92/pipelab` — Docker Compose
   behind Traefik; each service a compose entry with its Traefik host rule and TLS; secrets in GitHub, prefixed per
   service; a `deploy-<name>.yml` workflow that pulls and restarts a service on a `repository_dispatch` sent by this
-  project's CI. The site is one such service; an instance of the server (for the author's own use, or a public demo
-  over made-up data) is another — `/mcp` routed with no redirect, as the author's fluentkit and finkit do. Any other
-  installation runs the same image its own way.
+  project's CI. The docs site is the only one — pipelab runs no instance of the server. An installation (a company's,
+  in its own repositories) runs the published image its own way, typically behind its MCP gateway.
 
 ## Not in scope (for now)
 

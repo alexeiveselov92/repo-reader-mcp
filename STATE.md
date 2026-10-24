@@ -39,16 +39,15 @@
 
 ## Next step — milestone 5
 
-An instance of the server in pipelab: a container image of the server (a root `Dockerfile`, pushed to GHCR by a
-workflow, like the site's), a `repo-reader-mcp` service with `/mcp` routed without a redirect, its `deploy-*.yml`,
-its configuration and token secret in pipelab — for the author's own use and a public demo.
+Ready to deploy: a container image of the server on GHCR (built by CI), a health endpoint, the guide's page on running
+it in a container behind an MCP gateway — proved by a real installation that a company keeps in its own repositories
+(its configuration and deployment live there, never here; what it needs comes back here as general requirements).
+pipelab hosts the docs site only.
 
-## What the author needs to decide (before milestone 5)
+## What the author needs to do
 
-1. **What the instance serves**: the author's own public repositories (this one, detectkit, …), a public demo over
-   made-up repositories, or something private — its configuration lives in pipelab, never here.
-2. **Who may call it**: a bearer token (the author creates the secret in pipelab's GitHub settings), or open for a
-   demo.
+- Nothing blocks the library. The installation's work (its configuration, a read-only token for its host, its
+  gateway) happens in that installation's own repository and session.
 
 ## Don't
 
