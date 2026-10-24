@@ -38,9 +38,9 @@ with something visible: a real agent answering through the server.
 - [x] `website/` (2026-10-24) — Astro + Starlight built from `docs/`, the author's detectkit pattern (`../detectkit/website`: the
       `sync-docs` script importing `docs/`, the nginx Dockerfile, the `website.yml` workflow pushing the image to GHCR and
       sending `repository_dispatch` to pipelab).
-- [x] In pipelab (`../pipelab`, under its own rules; 2026-10-24): the site at `repo-reader.pipelab.dev` — a compose service
+- [x] In pipelab (`../pipelab`, under its own rules; 2026-10-24): the site at `rrm.pipelab.dev` — a compose service
       behind Traefik and its `deploy-*.yml`, as detectkit's site is served.
-- [x] The guide as it stands after milestone 2 published there (2026-10-24, https://repo-reader.pipelab.dev); from now on every milestone's pages go live with it.
+- [x] The guide as it stands after milestone 2 published there (2026-10-24, https://rrm.pipelab.dev); from now on every milestone's pages go live with it.
 
 ## Milestone 4. Search and safety — ✅ 2026-10-24
 

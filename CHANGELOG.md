@@ -4,6 +4,7 @@ One line per change, newest on top: `YYYY-MM-DD — what was done`.
 
 ---
 
+2026-10-24 — the docs site moved to https://rrm.pipelab.dev (short, like swm and dtk); the old repo-reader.pipelab.dev answers 301 there, keeping the path — 0.1.0's PyPI metadata points at it
 2026-10-24 — the site's landing page on the pattern of detectkit's: a hero with a real agent-and-server exchange, sections showing what the tools actually print (history, search, mirrors and groups, safety, guidance, clients), "what it is — and isn't"; light and dark; made-up data only; milestone 5 done
 2026-10-24 — 0.1.0, the first release: the package on PyPI (`uvx repo-reader-mcp`, `pip install repo-reader-mcp`), published by trusted publishing from the `publish` workflow on a tag `v*` (tests run first, the tag must name the version); the guide installs it with `uvx`; README links absolute for PyPI
 2026-10-24 — the third refuting review's findings closed (search and secrets): a regex could read a secret out a character at a time — a line holding a hidden value now never matches a regex, a plain text only clear of it, the answer as git would have given it without the dropped lines; log by message the same; keys on one line, in diffs and Redis-style URL passwords hidden; a marker in code no longer hides what follows; credential files and log no longer walk whole trees and histories; more credential names; answers kept within their limit; milestone 4 done

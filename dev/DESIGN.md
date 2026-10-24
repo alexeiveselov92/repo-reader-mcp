@@ -243,7 +243,7 @@ the MCP Inspector (the TypeScript SDK's client), over stdio and HTTP.
   build, and `tests/test_docs.py` checks the same; the landing page is `website/src/pages/index.astro` — a standalone page with its own styles, on the pattern of
   detectkit's: a hero with a real exchange, sections showing what the tools actually print, made-up data only), served by nginx
   from an image (`website/Dockerfile`, pushed to GHCR by `.github/workflows/website.yml`, which then sends
-  `repository_dispatch: repo-reader-mcp-updated` to pipelab) at `repo-reader.pipelab.dev`.
+  `repository_dispatch: repo-reader-mcp-updated` to pipelab) at `rrm.pipelab.dev`.
 - **Distribution**: the package on PyPI (`uvx repo-reader-mcp`); a container image on GHCR
   (`ghcr.io/alexeiveselov92/repo-reader-mcp`); the site's image beside it (`ghcr.io/alexeiveselov92/repo-reader-mcp-web`).
 - **Hosting (the author's own)**: the author's server is run as code in `alexeiveselov92/pipelab` — Docker Compose

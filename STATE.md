@@ -5,7 +5,7 @@
 **Updated:** 24 October 2026 (mid-session: the author asked to keep working in the same session).
 
 **Current milestone: 6 — ready to deploy** (`dev/PLAN.md`). Milestones 1 (local repositories),
-2 (remote repositories, groups, HTTP, links), 3 (the docs site, live at https://repo-reader.pipelab.dev) and
+2 (remote repositories, groups, HTTP, links), 3 (the docs site, live at https://rrm.pipelab.dev) and
 4 (search and safety) are done.
 
 ## What exists

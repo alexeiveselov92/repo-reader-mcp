@@ -1,7 +1,7 @@
 # repo-reader-mcp documentation
 
 The documentation for people who use and run repo-reader-mcp. This folder is the **single source**: the site
-(Astro + Starlight, in `website/`, at [repo-reader.pipelab.dev](https://repo-reader.pipelab.dev)) is built from these
+(Astro + Starlight, in `website/`, at [rrm.pipelab.dev](https://rrm.pipelab.dev)) is built from these
 files and carries every one of them — a test fails otherwise; edit them here, never in the site.
 
 How the project is built and planned is not here: that is `dev/` (design, plan, decisions, research).

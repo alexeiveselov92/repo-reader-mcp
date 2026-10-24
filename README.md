@@ -7,7 +7,7 @@ many repositories — without ever changing them.
 > **Status: pre-alpha.** It reads local repositories, and remote ones it mirrors from any git host — one by one, or a
 > whole group by a pattern (`github: acme/shop-*`) — at any branch, tag or commit: history, diffs, blame. One server
 > can serve a team over HTTP behind a token, and search across all its repositories at once; secrets found in files are
-> hidden. Documentation: **[repo-reader.pipelab.dev](https://repo-reader.pipelab.dev)**. The plan is in [dev/PLAN.md](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/dev/PLAN.md), the design in [dev/DESIGN.md](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/dev/DESIGN.md).
+> hidden. Documentation: **[rrm.pipelab.dev](https://rrm.pipelab.dev)**. The plan is in [dev/PLAN.md](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/dev/PLAN.md), the design in [dev/DESIGN.md](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/dev/DESIGN.md).
 
 ## Install
 
@@ -16,7 +16,7 @@ uvx repo-reader-mcp --config config.yaml --check   # with uv: nothing else to in
 pip install repo-reader-mcp                          # or into an environment of your own
 ```
 
-Python 3.12+ and git 2.31+. Then [say which repositories it reads and connect your agent](https://repo-reader.pipelab.dev/getting-started/).
+Python 3.12+ and git 2.31+. Then [say which repositories it reads and connect your agent](https://rrm.pipelab.dev/getting-started/).
 
 ## Why
 
@@ -45,7 +45,7 @@ whole team.
 One YAML file names the repositories and what to take from them; secrets are named, never written in it.
 An example is in [examples/config.example.yaml](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/examples/config.example.yaml); every key is in
 [docs/reference/configuration.md](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/docs/reference/configuration.md). The documentation is at
-**[repo-reader.pipelab.dev](https://repo-reader.pipelab.dev)**, built from [docs/](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/docs/README.md).
+**[rrm.pipelab.dev](https://rrm.pipelab.dev)**, built from [docs/](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/docs/README.md).
 
 ## Development
 

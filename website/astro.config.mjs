@@ -4,7 +4,7 @@ import starlight from '@astrojs/starlight';
 
 // The guide's pages come from docs/ (scripts/sync-docs.mjs); the sidebar lists them in the order a reader meets them.
 export default defineConfig({
-  site: 'https://repo-reader.pipelab.dev',
+  site: 'https://rrm.pipelab.dev',
   integrations: [
     starlight({
       title: 'repo-reader-mcp',
