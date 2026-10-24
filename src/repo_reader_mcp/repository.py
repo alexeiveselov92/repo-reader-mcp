@@ -136,6 +136,9 @@ class BlameCommit:
     subject: str
 
 
+MISSING_SIGNS = ("promisor", "transport", "lazy fetching disabled", ": bad file")
+
+
 class Repository:
     def __init__(self, config: RepositoryConfig):
         self.config = config
@@ -149,7 +152,9 @@ class Repository:
         try:
             return run(self.config.git_dir, args, limit=limit, ok_codes=ok_codes)
         except GitError as error:
-            if "promisor" in error.stderr or "transport" in error.stderr:
+            # How git says contents are missing from a partial clone: by the fetch it is refused (older git), or —
+            # with lazy fetching off (git 2.44 and later) — by saying so, or that the object is a bad file.
+            if any(sign in error.stderr for sign in MISSING_SIGNS):
                 if self.mirror is not None:
                     raise MissingContents(
                         f"git needs file contents {self.name}'s mirror doesn't hold, and reading never fetches them"
