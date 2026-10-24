@@ -95,26 +95,31 @@ guide says so.
 
 ## 2026-10-24 · Guidance is announced by every answer, not given once a session
 
-**Decision** (made while building; the author to confirm). Every answer about a repository with guidance starts with
-one line naming `read_guidance`; a short scoped rule rides with each answer about its paths; the full guidance is read
+**Decision** (made while building; settled — the author asked Claude to choose). Every answer about a repository with
+guidance starts with one line naming `read_guidance`; a short scoped rule rides with each answer about its paths; the full guidance is read
 with `read_guidance`.
 
 **Why.** The design said "the first answer in a session carries it" — but MCP keeps no session between requests
 (protocol revision 2026-07-28: each request is its own exchange; the SDK builds a new connection object per request).
 A server can't know what an agent read, and on a shared server it can't tell agents apart. One line per answer
 (~40 tokens) works on every transport; real Claude Code read the guidance on its own in every conversation and
-followed it.
+followed it. Kept over the alternative — guidance named only in the server's instructions — because an agent that
+never reads the rules answers against them, and the rules are what a team wrote the guidance for; 40 tokens an answer
+is the price of that.
 
 ## 2026-10-24 · Contents of an older commit are fetched on purpose, for served paths only
 
-**Decision** (proposed at the session's start; the author said "go" without choosing — to confirm). When a tool needs
+**Decision** (proposed at the session's start; settled — the author asked Claude to choose). When a tool needs
 the contents of a file at a commit whose contents the mirror lacks, the server fetches exactly those contents from the
 host first (`Mirror.ensure`), after checking each path against include / exclude, and then reads. The alternative —
 answering "not in the mirror" — was safer but leaves agents stuck on every older commit.
 
 **Why.** "Never fetched by a reading command" stays true: the reading commands keep `protocol.allow=never`; the fetch
 is a separate, deliberate step that names the objects and checks their paths in one place. Measured on a public
-repository: five real questions fetched 29 contents on top of the 190 the sync took, none of an excluded path.
+repository: five real questions fetched 29 contents on top of the 190 the sync took, none of an excluded path. Kept
+over answering "not in the mirror": reading code with its history is the project's first goal, and an agent stuck on
+every older commit doesn't meet it; the safety that answer would buy is already held by the path check, which has its
+test.
 
 ## 2026-10-24 · A mirror keeps every branch and tag unless `refs` narrows it; named from its URL
 
