@@ -144,7 +144,9 @@ that changed a served file and an excluded one may name both in its message.
 
 A repository's [guidance for agents](guidance.md) is presented to agents as instructions, so it is read only on the
 default branch — the one a team reviews — never on the branch an agent is reading; a repository whose contributors
-shouldn't instruct agents is configured with `own: false`. Guidance obeys `include` / `exclude` like any other file.
+shouldn't instruct agents is configured with `own: false`, and one whose rules were written for another job (its
+developers' process) takes only some of them with `own: [patterns]`. Guidance obeys `include` / `exclude` like any
+other file.
 
 ## Sizes
 

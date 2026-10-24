@@ -156,7 +156,8 @@ repositories:
     path: /srv/code/shop-api
     # guidance:          # or for one repository:
     #   from: [{repo: acme-rules, path: shop-api}]
-    #   own: false       # ignore its own files`);
+    #   own: false       # ignore its own files — or take some:
+    #   own: [".claude/rules/architecture-*.md"]`);
 
 const guidanceRead =
   call('read_guidance', { repo: 'shop-api' }) +

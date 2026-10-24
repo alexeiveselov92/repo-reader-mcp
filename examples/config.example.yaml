@@ -10,6 +10,7 @@ repositories:
     guidance:                            # for agents, beside the repository's own AGENTS.md, rules and skills
       text: Amounts are cents. Answer them in euros with two decimals.
       from: [{repo: acme-rules, path: shop-backend}]   # a folder of another repository: its AGENTS.md, rules, skills
+      own: [AGENTS.md, ".claude/rules/architecture-*.md"]  # of its own files, only these (default: all; false: none)
 
   - name: handbook
     path: /srv/code/handbook
