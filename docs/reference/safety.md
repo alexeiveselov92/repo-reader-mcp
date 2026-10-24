@@ -154,8 +154,38 @@ the answer says it is partial. One reading git command is stopped after 30 secon
 minutes. A request to a host's API is stopped after 30 seconds and read up to 32 MB a page; a group lists up to 20,000
 repositories.
 
-## Not yet
+## Secrets found in files are hidden
 
-- **Secrets in files are not hidden yet.** A key committed to a served file is shown as it is. Until the secret scan
-  comes (`dev/PLAN.md`, milestone 4), keep such files out with `exclude` (`*.pem`, `*.env`, `secrets`) — for a mirror,
-  that also keeps their contents off the server's disk.
+Repositories hold secrets they shouldn't — a token in a config, a password in a URL, a private key someone committed.
+Every answer, and every error, passes through a filter that replaces each value that looks like a secret with
+`[hidden: <what>]`, and the answer ends saying how many it hid:
+
+```
+  3	  github_token: "[hidden: GitHub token]"
+  4	  database: postgres://shop:[hidden: password]@db.example.com/shop
+
+[2 values that look like secrets are hidden as `[hidden: …]` — this server never shows them.]
+```
+
+- **What it hides**: providers' keys and tokens by their own formats (AWS, GitHub, GitLab, Slack, Stripe, Google,
+  OpenAI, Anthropic, npm, Telegram, JWTs); the password in `scheme://user:password@host`; the lines of a private key —
+  its whole block where the file is at hand (`read_file`, `blame`, `search`, `grep`), and any line of key material
+  elsewhere; a value given to a setting named for a secret (`password`, `secret`, `token`, `api_key`, `access_key`,
+  `private_key` — `API_KEY=…`, `"client_secret": "…"`) unless it is a reference or a placeholder (`os.environ[…]`,
+  `${VAR}`, `changeme`, a name); a password written in prose ("the password is …").
+- **Everywhere**: files, blame, diffs and commits, histories' messages, search and grep hits, guidance — the filter is
+  the last thing every tool's answer passes through, so a tool added later can't skip it.
+- **A guessed secret can't be confirmed**: a line that `search` or `grep` found only inside a hidden value is left out,
+  and so is a commit `log` found by its message only inside one — searching for a value can't tell whether the
+  repository holds it.
+- **The rules lean towards hiding**: a value hidden by mistake (a long base64 line, a test fixture shaped like a key)
+  costs a look at the host; a value shown costs a rotation. What they can't see is not hidden: a secret with no
+  recognisable shape, in no setting named for one — keep such files out with `exclude`.
+
+## Files named for credentials are never served
+
+`.env` (and `.env.local`, `.env.production`… — not `.env.example`, `.env.sample`, `.env.template`), `*.pem`, `*.key`,
+`*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.kdbx`, `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519`, `.netrc`, `.pgpass`,
+`.pypirc` are treated as `exclude` takes them, in every repository: never listed, read, searched or diffed — and never
+fetched into a mirror. A repository whose such files are meant to be read says `serve_credential_files: true`; the
+secrets in them are still hidden.

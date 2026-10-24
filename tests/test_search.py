@@ -30,8 +30,9 @@ async def test_search_finds_text_across_repositories(shop):
 
 async def test_search_never_looks_where_exclude_keeps_out(shop):
     config = two(shop[0], exclude=["secrets"])
-    text, _ = await ask(config, "search", pattern="made-up-secret-value")
+    text, _ = await ask(config, "search", pattern="API_KEY")
     assert "## shop" in text and "## copy" not in text  # found in the repository serving it, not in the other
+    assert "secrets/prod.env\n  1: API_KEY=[hidden: secret value]" in text
     text, _ = await ask(config, "search", pattern="API_KEY", repos=["copy"])
     assert "no line matches" in text and "secrets/prod.env" not in text
 

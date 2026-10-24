@@ -65,6 +65,7 @@ remote ones (`github:` or `gitlab:`); exactly one of the four.
 | `description` | | A sentence for agents: what this repository is. Shown by `list_repos`. |
 | `listed` | | `false` keeps it from agents — out of `list_repos` and every tool — as a source of [guidance](guidance.md) for other repositories only. Default `true`. |
 | `guidance` | | [Guidance for agents](guidance.md) about this repository: `text`, `files`, `from` (folders of other repositories listed one by one — a group's repository can't be a source), `own` (whether its own `AGENTS.md`, rules and skills count; default `true`). |
+| `serve_credential_files` | `false` | `true` serves the files named for credentials (`.env`, `*.pem`, `*.key`, `id_rsa`, … — [the list](safety.md#files-named-for-credentials-are-never-served)), which are otherwise left out — and, on a mirror, never fetched. Their secrets are still hidden. Changing it makes a new mirror. |
 | `include` | | Patterns of the paths served. When given, only these are served — a folder added to the repository later stays out until a pattern takes it. Not given: everything. |
 | `exclude` | | Patterns of paths never served, even inside `include`. |
 

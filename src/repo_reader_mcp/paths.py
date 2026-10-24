@@ -66,16 +66,31 @@ def compile_pattern(pattern: str) -> re.Pattern[str]:
     return re.compile("".join(parts))
 
 
-class Matcher:
-    """Which paths of a repository are served: those `include` takes (all, when it's not given), minus `exclude`."""
+# Files named for credentials (docs/reference/safety.md): never served, never fetched — unless a repository's entry
+# says `serve_credential_files: true`. `.env.example` and its kind are templates, and served.
+CREDENTIAL_FILES = re.compile(
+    r"(?i)^(?:\.env(?:\.(?!(?:example|sample|template|dist|defaults?)$)[^/]+)?|id_(?:rsa|dsa|ecdsa|ed25519)"
+    r"|\.netrc|\.pgpass|\.pypirc|.+\.(?:pem|key|p12|pfx|jks|keystore|kdbx))$"
+)
 
-    def __init__(self, include: Iterable[str] | None = None, exclude: Iterable[str] = ()):
+
+class Matcher:
+    """Which paths of a repository are served: those `include` takes (all, when it's not given), minus `exclude` —
+    and, with `credentials`, minus files named for credentials."""
+
+    def __init__(self, include: Iterable[str] | None = None, exclude: Iterable[str] = (), credentials: bool = False):
         self._include = [compile_pattern(p) for p in include] if include is not None else None
         self._exclude = [compile_pattern(p) for p in exclude]
+        self._credentials = credentials
+
+    @property
+    def configured(self) -> bool:
+        """Whether include / exclude narrow what is served."""
+        return self._include is not None or bool(self._exclude)
 
     @property
     def takes_everything(self) -> bool:
-        return self._include is None and not self._exclude
+        return not self.configured and not self._credentials
 
     @staticmethod
     def _hits(patterns: list[re.Pattern[str]], path: str) -> bool:
@@ -85,6 +100,8 @@ class Matcher:
 
     def allows(self, path: str) -> bool:
         """Whether a file at this path is served."""
+        if self._credentials and CREDENTIAL_FILES.fullmatch(path.rsplit("/", 1)[-1]):
+            return False
         if self._include is not None and not self._hits(self._include, path):
             return False
         return not self._hits(self._exclude, path)

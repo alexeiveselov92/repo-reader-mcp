@@ -565,4 +565,4 @@ def test_two_configurations_never_share_a_mirror(tmp_path, monkeypatch):
 
     assert folder() == folder()
     different = {folder(), folder(refs=["main"]), folder(exclude=["secrets"]), folder(include=["src"])}
-    assert len(different | {folder(token_env="ACME_TOKEN")}) == 5
+    assert len(different | {folder(token_env="ACME_TOKEN"), folder(serve_credential_files=True)}) == 6

@@ -4,6 +4,7 @@ One line per change, newest on top: `YYYY-MM-DD — what was done`.
 
 ---
 
+2026-10-24 — secrets found in files hidden in every answer and error (providers' token formats, URL passwords, private keys — a block whole where the file is at hand —, values of settings named for secrets, passwords in prose), the count said; a guessed secret can't be confirmed by search, grep or a log by message; files named for credentials (`.env`, `*.pem`, `id_rsa`, …) never served nor fetched unless `serve_credential_files: true`
 2026-10-24 — `search` across repositories (default branches) and `grep` in one at any ref, with context or files only: `git grep` given the served files by name, so nothing include / exclude keep out is ever searched; 0.2–0.4 s over 18 real repositories; real Claude Code answered a cross-repository question with it
 2026-10-24 — the docs site is live at https://repo-reader.pipelab.dev (pipelab's `repo-reader-web`), redeployed on every push to main; milestone 3 done
 2026-10-24 — missing contents of a partial clone recognised as newer git (2.44+, CI's) reports them

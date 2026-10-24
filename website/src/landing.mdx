@@ -34,8 +34,9 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
     whole group by a pattern, new repositories joining as they are created.
   </Card>
   <Card title="Only what you serve" icon="padlock">
-    `include` and `exclude` hold for every tool: a path left out is never listed, read, diffed or blamed — and on a
-    mirror, its contents never reach the server's disk.
+    `include` and `exclude` hold for every tool: a path left out is never listed, read, searched or diffed — and on a
+    mirror, its contents never reach the server's disk. Files named for credentials stay out, and values that look like
+    secrets are hidden in every answer.
   </Card>
   <Card title="Guidance for agents" icon="open-book">
     A repository's `AGENTS.md`, `CLAUDE.md`, rules and skills reach the agent reading it — and what the people who run
@@ -47,5 +48,5 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
   </Card>
 </CardGrid>
 
-**Status: pre-alpha.** It runs from a clone of the source. Hiding secrets found in files and a published package come
-next — [the plan](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/dev/PLAN.md).
+**Status: pre-alpha.** It runs from a clone of the source. A published package comes next — [the
+plan](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/dev/PLAN.md).

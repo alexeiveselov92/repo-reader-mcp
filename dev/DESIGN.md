@@ -205,9 +205,14 @@ The public account is `docs/reference/safety.md`; each protection has a test tha
   with credentials and remote helpers (`ext::`) are refused in the configuration.
 - **The environment can't redirect git**: every inherited `GIT_*` variable is dropped but the three naming which
   configuration files to read.
-- **Secrets**: files named for credentials are never fetched; contents are scanned (gitleaks rules plus
-  rules for passwords written as prose) and a found value is hidden before an agent sees the file (milestone 4; until
-  then `exclude`, and the docs say so).
+- **Secrets** (built 2026-10-24 — `src/repo_reader_mcp/secrets.py`): files named for credentials are left out by the
+  matcher (`paths.CREDENTIAL_FILES`; `serve_credential_files: true` per entry), so never served nor fetched; every
+  answer and every error passes `tools.shown` last — providers' token formats, URL passwords, key material, values of
+  settings named for secrets (references and placeholders left), passwords in prose — each replaced by
+  `[hidden: <what>]`, the count said. A private key's block is hidden whole where the file is whole (`read_file`,
+  `blame`; `search` / `grep` find the blocks with a second `git grep` over the files they hit). A hit found only inside
+  a hidden value is dropped (search, grep, and log by message — `--extended-regexp`, re-read by Python), so a guessed
+  secret can't be confirmed.
 - **Tokens** travel in git's environment only — never a command line, a remote URL, a mirror's files or its status;
   error messages are scrubbed of them (the token, `user:token`, its base64). With a token, no redirect is followed and
   the account's credential helpers are off.

@@ -23,7 +23,10 @@ Every tool repo-reader-mcp offers to an agent. All are read-only: each says so t
   cut answer ends with a note in brackets saying what was left out and how to get it: the `start_line` to continue
   from, the `skip` to page on, or the `path` to narrow to.
 - **Paths outside the repository's `include` / `exclude` are never shown** — not listed, not in a diff, not read.
-  Asked for by name, the answer is that the path is outside what this server serves.
+  Asked for by name, the answer is that the path is outside what this server serves. Nor are files named for
+  credentials (`.env`, `*.pem`, `id_rsa`, …).
+- **Secrets are hidden.** A value that looks like a secret is shown as `[hidden: <what>]`, and the answer ends saying
+  how many were hidden ([safety](safety.md#secrets-found-in-files-are-hidden)).
 - **Guidance comes first.** An answer about a repository that carries [guidance for agents](guidance.md) starts with a
   line saying so; an answer about a path a short scoped rule covers carries the rule, between `=== Guidance … ===` and
   `=== End of guidance — the answer follows ===`. Guidance takes at most half of an answer.
@@ -106,7 +109,7 @@ committed), author and subject.
 | `repo`, `ref` | as above — `ref` is where the history starts from |
 | `path` | only commits that changed this file or folder |
 | `author` | only commits whose author's name or email matches (a regular expression, any case) |
-| `message` | only commits whose message matches (a regular expression, any case) |
+| `message` | only commits whose message matches (an extended regular expression, any case) |
 | `since`, `until` | only commits after / before a date: `2026-01-31`, `2 weeks ago` |
 | `max_count` | at most this many commits (default 30, up to 500) |
 | `skip` | skip this many first — to page on; a cut answer gives the next `skip` |

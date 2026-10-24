@@ -7,7 +7,7 @@ many repositories — without ever changing them.
 > **Status: pre-alpha.** It reads local repositories, and remote ones it mirrors from any git host — one by one, or a
 > whole group by a pattern (`github: acme/shop-*`) — at any branch, tag or commit: history, diffs, blame. One server
 > can serve a team over HTTP behind a token, and search across all its repositories at once. Run from a clone of this
-> source ([getting started](docs/getting-started.md)); hiding secrets found in files and a published package are next:
+> source ([getting started](docs/getting-started.md)); secrets found in files are hidden. A published package is next:
 > the plan is in [dev/PLAN.md](dev/PLAN.md), the design in [dev/DESIGN.md](dev/DESIGN.md).
 
 ## Why

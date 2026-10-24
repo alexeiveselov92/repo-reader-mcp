@@ -20,6 +20,7 @@ from .config import Config
 from .guidance import Guide, render, render_one
 from .paths import PathError, clean_path, under
 from .repository import BATCH, At, Change, Entry, Hit, ReadError, Repository
+from .secrets import hidden_count, hide, hide_lines
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False)
 
@@ -93,6 +94,27 @@ def _counts(change: Change) -> str:
         return "binary"
     parts = (f"+{change.added}" if change.added else "", f"−{change.deleted}" if change.deleted else "")
     return " ".join(part for part in parts if part)
+
+
+HIDDEN_NOTE_RESERVE = 200  # kept for the note saying values were hidden
+
+
+def _hidden_text(text: str) -> str:
+    """Every line of a text with the values that look like secrets hidden — the last thing every answer and every error
+    passes through, whatever tool made it."""
+    return "\n".join(hide(line) for line in text.split("\n"))
+
+
+def shown(text: str) -> str:
+    """An answer as an agent gets it: secrets hidden, and a note saying how many."""
+    text = _hidden_text(text)
+    count = hidden_count(text)
+    if not count:
+        return text
+    return text.rstrip("\n") + (
+        f"\n\n[{_plural(count, 'value')} that look{'s' if count == 1 else ''} like secrets "
+        f"{'is' if count == 1 else 'are'} hidden as `[hidden: …]` — this server never shows them.]\n"
+    )
 
 
 def _on_host(repo: Repository, link: str | None) -> str:
@@ -172,13 +194,15 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
                 due = ""
                 if carries and name in catalog.listed():
                     due = guide.due(name, path_of(path, allow_root=True) if path else None)[: limit // 2]
-                token = BUDGET.set(limit - len(due))
+                token = BUDGET.set(limit - len(due) - HIDDEN_NOTE_RESERVE)
                 try:
-                    return due + fn(*args, **kwargs)
+                    return shown(due + fn(*args, **kwargs))
                 finally:
                     BUDGET.reset(token)
             except ReadError as error:
-                raise ToolError(str(error)) from None
+                raise ToolError(_hidden_text(str(error))) from None
+            except ToolError as error:
+                raise ToolError(_hidden_text(str(error))) from None
 
         wrapped.__signature__ = signature
         wrapped.__name__ = fn.__name__
@@ -225,7 +249,7 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
             if remotes:
                 line += f", {remotes} remote-tracking"
             answer.add(line + " — list_refs lists them")
-            if not repo.matcher.takes_everything:
+            if repo.matcher.configured:
                 answer.add("Serves only part of it: paths outside its include / exclude are not shown.")
             pieces = len(guide.of(repo.name).docs)
             if pieces:
@@ -305,7 +329,7 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
             )
         if b"\0" in data.data[:BINARY_SNIFF]:
             return f"{head}\n{_on_host(r, page)}\nA binary file of {len(data.data)} bytes — not shown.\n"
-        lines = _lines(data.data)
+        lines = hide_lines(_lines(data.data))  # a private key's block hidden whole, wherever the window starts
         total = len(lines)
         if total == 0:
             return f"{head} · empty\n{_on_host(r, page)}"
@@ -393,7 +417,10 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
         ref: RefArg = None,
         path: Annotated[str | None, Field(description="Only commits that changed this file or folder.")] = None,
         author: Annotated[str | None, Field(description="Only commits whose author's name or email matches.")] = None,
-        message: Annotated[str | None, Field(description="Only commits whose message matches (a regex).")] = None,
+        message: Annotated[
+            str | None,
+            Field(description="Only commits whose message matches: an extended regular expression, case aside."),
+        ] = None,
         since: Annotated[str | None, Field(description="Only commits after: `2026-01-31`, `2 weeks ago`.")] = None,
         until: Annotated[str | None, Field(description="Only commits before this date.")] = None,
         max_count: Annotated[int, Field(ge=1, le=500, description="At most this many commits.")] = 30,
@@ -410,10 +437,12 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
             # Only commits that changed something served (or nothing at all): one that changed only paths outside
             # include / exclude is not told — paged here, after that choice, so `skip` counts what the agent sees.
             found, unread = r.log(at, **asked, count=None, with_paths=True)
+            found = r.still_say(found, message) if message else found
             seen = [c for c in found if not c.paths or any(r.matcher.allows(p) for p in c.paths)]
             commits = seen[skip : skip + max_count + 1]
         else:
             commits, unread = r.log(at, **asked, count=max_count + 1, skip=skip)
+            commits = r.still_say(commits, message) if message else commits
         more = len(commits) > max_count or unread
         commits = commits[:max_count]
         filters = [f"of {clean}" if clean else ""]
@@ -583,7 +612,8 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
             raise ToolError(f"`{clean}` is larger than {FILE_BYTES // (1024 * 1024)} MB — too large to blame")
         if entry.is_link or b"\0" in data.data[:BINARY_SNIFF]:
             raise ToolError(f"`{clean}` is a {'link' if entry.is_link else 'binary file'} — blame reads text files")
-        total = len(_lines(data.data))
+        whole = hide_lines(_lines(data.data))  # a private key's block hidden whole, wherever the window starts
+        total = len(whole)
         if total == 0:
             return f"{r.name} · blame {clean} · {at.describe()} · empty\n"
         if start_line > total:
@@ -608,7 +638,8 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
             if line.commit != current:
                 c = commits[line.commit]
                 block.append(f"{line.commit[:12]} {c.date} {c.author} — {c.subject}")
-            block.append(f"{line.number:>{width}}\t{_cut_line(line.text)}")
+            text = whole[line.number - 1] if line.number <= total else line.text
+            block.append(f"{line.number:>{width}}\t{_cut_line(text)}")
             if body.size + sum(len(b) + 1 for b in block) > body.room:
                 body.full = True
                 break

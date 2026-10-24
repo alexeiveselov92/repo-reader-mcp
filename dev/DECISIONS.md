@@ -230,3 +230,17 @@ to run them on, and `list_files` / `read_file` already do what `find` / `ls` / `
 this size, and an index is a second copy of the code with its own include / exclude to keep right. The earlier
 platform's numbers (~80 repositories, 50 people) are where an index starts to pay; it waits until a deployment's
 numbers ask for it.
+
+## 2026-10-24 · Secrets: hidden in every answer, by rules of our own; credential files left out by default
+
+**Decision** (made while building; the author asked Claude to go on). A filter of our own (`secrets.py`) — providers'
+token formats, URL passwords, key material, values of settings named for secrets, passwords in prose — is the last
+thing every answer and error passes through; a private key's block is hidden whole where the file is whole. A match
+found only inside a hidden value is dropped, so searching can't confirm a guessed secret. Files named for credentials
+are left out unless an entry says `serve_credential_files: true`. No switch turns the hiding off.
+
+**Why.** Rules written here, not gitleaks itself: a dependency in another language for what thirty lines of patterns
+do, and gitleaks finds secrets to report, while this hides them inline — leaning towards hiding, since a value hidden
+by mistake costs a look at the host and a value shown costs a rotation. Central rather than per tool: a tool added
+later can't forget it. No off switch: a switch is how a leak gets configured. Known limit, documented: a secret with no
+recognisable shape, in no setting named for one, is not seen — `exclude` keeps such files out.

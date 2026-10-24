@@ -164,6 +164,7 @@ class RepositorySettings(_Strict):
     skip: list[str] | None = Field(default=None, min_length=1)
     links: Literal["github", "gitlab", "bitbucket", "none"] | None = None
     forks: bool | None = None
+    serve_credential_files: bool = False
     token_env: str | None = Field(default=None, pattern=VARIABLE_PATTERN)
     token_user: str | None = Field(default=None, min_length=1, pattern=r"^[^:\s]+$")
     refs: list[str] | None = Field(default=None, min_length=1)
@@ -290,6 +291,7 @@ class Group:
     matcher: Matcher = field(default_factory=Matcher)  # one for every member
     links: str | None = None  # the kind of the host's pages: the group's own unless `links` says otherwise
     forks: bool = False  # whether forks are taken
+    credential_files: bool = False  # whether files named for credentials are served
 
     @property
     def label(self) -> str:
@@ -353,12 +355,14 @@ def mirror_dir(
     include: Any = None,
     exclude: Any = (),
     token_env: str | None = None,
+    credential_files: bool = False,
 ) -> Path:
     """A mirror's folder: its name, and a digest of what it is made from — its URL, `refs`, `include`, `exclude` and
     the name of the variable its token is in. A mirror holds exactly what one configuration takes: another configuration
     sharing the folder (another server on the machine), or this one changed, gets a mirror of its own — never branches
     or contents another one fetched, nor what was fetched with a token by one that names none."""
     made_of = [url, list(refs) if refs else None, list(include) if include else None, list(exclude), token_env]
+    made_of += ["credential files"] if credential_files else []  # it holds them: never one for a server that doesn't
     return folder / f"{name}-{hashlib.sha256(json.dumps(made_of).encode()).hexdigest()[:12]}.git"
 
 
@@ -368,7 +372,11 @@ def member_config(group: Group, folder: str, name: str, path: str, description: 
     url = group.host.git_url(path)
     about = " — ".join(text for text in (group.description, description) if text) or None
     remote = Remote(url, url_protocol(url), group.token_env, group.token_user, group.refs)
-    git_dir = str(mirror_dir(Path(folder), name, url, group.refs, group.include, group.exclude, group.token_env))
+    git_dir = str(
+        mirror_dir(
+            Path(folder), name, url, group.refs, group.include, group.exclude, group.token_env, group.credential_files
+        )
+    )
     links = links_for(url, group.links or group.kind)
     return RepositoryConfig(
         name, git_dir, git_dir, about, group.matcher, group.listed, group.guidance, remote, group.label, links
@@ -492,9 +500,10 @@ def _group(repo: RepositorySettings, where: str, base: Path, problems: list[str]
         repo.description,
         repo.listed,
         guidance,
-        Matcher(repo.include, repo.exclude),
+        Matcher(repo.include, repo.exclude, credentials=not repo.serve_credential_files),
         repo.links,
         bool(repo.forks),
+        repo.serve_credential_files,
     )
 
 
@@ -573,7 +582,16 @@ def parse_config(data: Any, base: Path, source: str = "") -> Config:
                 repo.token_user or "x-access-token",
                 tuple(repo.refs) if repo.refs else None,
             )
-            path = mirror_dir(folder, name, repo.url, repo.refs, repo.include, repo.exclude, repo.token_env)
+            path = mirror_dir(
+                folder,
+                name,
+                repo.url,
+                repo.refs,
+                repo.include,
+                repo.exclude,
+                repo.token_env,
+                repo.serve_credential_files,
+            )
             git_dir = str(path)
         else:
             stray = [key for key in ("token_env", "token_user", "refs", "links") if getattr(repo, key) is not None]
@@ -601,7 +619,7 @@ def parse_config(data: Any, base: Path, source: str = "") -> Config:
         guidance = RepositoryGuidance(
             _text_docs(repo.guidance, base, f"{where} → guidance", problems), repo.guidance.sources, repo.guidance.own
         )
-        matcher = Matcher(repo.include, repo.exclude)
+        matcher = Matcher(repo.include, repo.exclude, credentials=not repo.serve_credential_files)
         links = links_for(repo.url, repo.links) if repo.url else None
         repositories.append(
             RepositoryConfig(

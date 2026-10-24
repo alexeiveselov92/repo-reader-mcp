@@ -46,7 +46,7 @@ with something visible: a real agent answering through the server.
 
 - [x] `search` across repositories, `grep` in one at any ref (2026-10-24: `git grep` over the served files, no index —
       measured 0.2–0.4 s over 18 repositories; an index waits until numbers ask for one).
-- [ ] The secret scan before serving; files named for credentials never fetched.
+- [x] The secret scan before serving; files named for credentials never fetched (2026-10-24).
 - [ ] A refuting review of the safety (a second reader whose job is to break it); every protection with a
       test that fails when it is removed.
 
