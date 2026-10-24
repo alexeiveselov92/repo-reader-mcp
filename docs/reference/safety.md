@@ -107,7 +107,9 @@ A [group](../remote-repositories.md#groups) is listed by the host's API — read
 ## Over HTTP, only who may call
 
 - **A bearer token** on every request (`http.token_env`), compared in constant time; any other request is answered
-  `401` with nothing else.
+  `401` with nothing else. The one exception is `GET /health`, exactly that path. It says only whether the server
+  is ready (`{"status": "ready"}` or `"syncing"`), names no repository and reads none ([in a
+  container](../running-in-a-container.md#health)).
 - **Never open by accident**: on an address other than the machine's own, the server won't start without a token or
   `http.behind_gateway: true`.
 - **On the machine's own address** — exactly `127.0.0.1`, `localhost` or `::1` — no token is needed, and only requests

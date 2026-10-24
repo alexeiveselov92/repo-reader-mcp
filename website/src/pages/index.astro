@@ -280,7 +280,7 @@ const credentialFiles = ['.env', '*.pem', '*.key', 'id_rsa', 'id_ed25519', '.net
             <a class="btn btn-primary" href={start}>Get started</a>
             <a class="btn btn-ghost" href={repo}>GitHub</a>
           </div>
-          <p class="hero-note">Pre-alpha, on PyPI: <code>uvx repo-reader-mcp</code> or <code>pip install repo-reader-mcp</code>. A container image comes next.</p>
+          <p class="hero-note">Pre-alpha, on PyPI: <code>uvx repo-reader-mcp</code> or <code>pip install repo-reader-mcp</code>. Or <a href="/running-in-a-container/">its container image</a>.</p>
           <ul class="hero-stats" aria-label="At a glance">
             <li><strong>12</strong> read-only tools</li>
             <li><strong>stdio</strong> or <strong>Streamable HTTP</strong></li>
@@ -572,6 +572,7 @@ const credentialFiles = ['.env', '*.pem', '*.key', 'id_rsa', 'id_ed25519', '.net
           <li><strong>A bearer token or a gateway</strong> — on any address but the machine's own, the server won't start open to anyone.</li>
           <li><strong>Stateless</strong> — each request answered on its own, so it restarts or scales without clients noticing.</li>
           <li><strong>Plain JSON answers</strong> — what gateways and proxies pass through unchanged; TLS goes in front.</li>
+          <li><strong>A container image</strong> — read-only, without rights, with <code>/health</code> for a gateway's readiness probe. <a href="/running-in-a-container/">Running it in a container →</a></li>
         </ul>
       </section>
 

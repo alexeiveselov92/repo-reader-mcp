@@ -1,0 +1,89 @@
+name: image
+
+# The server's image (docs/running-in-a-container.md): built and tried on both platforms on every change, so the
+# Dockerfile never breaks unseen; published to GHCR for a release tag (v1.2.3) only — from the layers just tried, as
+# that version and its commit, never as `latest` — and the published image tried again.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: build, try, and (for a tag) publish the image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: the tag names the version in pyproject.toml
+        if: env.PUBLISH == 'true'
+        run: |
+          version=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME but pyproject.toml says $version"; exit 1; }
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: build for amd64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: repo-reader-mcp:try-amd64
+          cache-from: type=gha,scope=image-amd64
+          cache-to: type=gha,scope=image-amd64,mode=max
+      - name: try it on amd64
+        run: .github/scripts/try-image.sh repo-reader-mcp:try-amd64 linux/amd64
+      - name: build for arm64 (emulated)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          load: true
+          tags: repo-reader-mcp:try-arm64
+          cache-from: type=gha,scope=image-arm64
+          cache-to: type=gha,scope=image-arm64,mode=max
+      - name: try it on arm64 (emulated)
+        run: .github/scripts/try-image.sh repo-reader-mcp:try-arm64 linux/arm64
+      - uses: docker/login-action@v3
+        if: env.PUBLISH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        if: env.PUBLISH == 'true'
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-
+      - name: publish both platforms, from the layers just tried
+        if: env.PUBLISH == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: |
+            type=gha,scope=image-amd64
+            type=gha,scope=image-arm64
+      - name: try the published image on both platforms
+        if: env.PUBLISH == 'true'
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
+        run: |
+          .github/scripts/try-image.sh "$IMAGE" linux/amd64
+          .github/scripts/try-image.sh "$IMAGE" linux/arm64

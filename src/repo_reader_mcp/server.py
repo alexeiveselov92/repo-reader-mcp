@@ -10,6 +10,8 @@ import sys
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from . import __version__
 from .catalog import Catalog, keep_fresh, resolve
@@ -21,6 +23,9 @@ from .repository import ReadError
 from .tools import READ_ONLY, register
 
 CONFIG_VARIABLE = "REPO_READER_MCP_CONFIG"
+
+# Over HTTP, the one path answered without the token: whether the server is ready, and nothing else.
+HEALTH = "/health"
 
 INSTRUCTIONS = (
     "repo-reader-mcp reads code in git repositories and never changes them. Start with `list_repos`. Every tool "
@@ -49,6 +54,14 @@ def build_server(config: Config | None = None, catalog: Catalog | None = None) -
             "read_only": True,
             "repositories": len(catalog.listed()),
         }
+
+    @server.custom_route(HEALTH, methods=["GET"])
+    async def health(request: Request) -> JSONResponse:
+        """Over HTTP, for a gateway's or an orchestrator's readiness probe: `200` once the repositories can be read,
+        `503` while the first sync is under way. It names no repository and reads none."""
+        if catalog.ready.is_set():
+            return JSONResponse({"status": "ready"})
+        return JSONResponse({"status": "syncing"}, status_code=503)
 
     register(server, config, catalog)
     return server
@@ -134,14 +147,15 @@ LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
 class BearerToken:
     """Every request carries `Authorization: Bearer <token>`, or is answered 401 — compared in constant time, so the
-    time an answer takes tells nothing about the token."""
+    time an answer takes tells nothing about the token. Only an HTTP request for exactly `/health` passes without it."""
 
     def __init__(self, app, token: str):
         self.app = app
         self.expected = f"Bearer {token}".encode()
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] in ("http", "websocket"):
+        probe = scope["type"] == "http" and scope["path"] == HEALTH
+        if scope["type"] in ("http", "websocket") and not probe:
             given = b""
             for key, value in scope.get("headers", ()):
                 if key.lower() == b"authorization":
@@ -186,6 +200,15 @@ def http_app(server: MCPServer, config: Config, host: str):
             raise ConfigError("http", [f"the variable {config.http.token_env} is not set in the server's environment"])
         return BearerToken(app, token)
     return app
+
+
+class QuietProbes(logging.Filter):
+    """Leaves probes — a GET or HEAD of `/health` — out of the access log: one every few seconds would bury every
+    other line. Any other request to it is logged."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        return not (isinstance(args, tuple) and len(args) > 2 and args[1] in ("GET", "HEAD") and args[2] == HEALTH)
 
 
 def _address(value: str) -> tuple[str, int]:
@@ -242,6 +265,7 @@ def main(argv: list[str] | None = None) -> None:
         return
     import uvicorn
 
+    logging.getLogger("uvicorn.access").addFilter(QuietProbes())
     uvicorn.run(app, host=host, port=port, log_level="info", server_header=False)
 
 

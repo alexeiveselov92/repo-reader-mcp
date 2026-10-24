@@ -210,6 +210,20 @@ def test_a_folder_inside_a_repository_is_refused(shop):
     assert "inside the repository" in found[0]
 
 
+def test_a_repository_of_another_user_is_named_so(shop, tmp_path, monkeypatch):
+    """git won't read a folder another user owns (a mount in a container): the problem says why and what to do — the
+    owner can't be changed here, so git's own refusal is played back."""
+    import subprocess
+
+    refusal = (
+        b"fatal: detected dubious ownership in repository at '/repos/shop'\n"
+        b"To add an exception for this directory, call:\n\n\tgit config --global --add safe.directory /repos/shop\n"
+    )
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: subprocess.CompletedProcess(args, 128, b"", refusal))
+    found = problems({"repositories": [{"name": "shop", "path": str(shop[0])}]}, tmp_path)
+    assert "belongs to another user than the one the server runs as" in found[0] and "safe.directory" in found[0]
+
+
 def test_names_must_be_plain_and_unique(shop):
     path, _ = shop
     data = {"repositories": [{"name": "shop", "path": str(path)}, {"name": "shop", "path": str(path)}]}

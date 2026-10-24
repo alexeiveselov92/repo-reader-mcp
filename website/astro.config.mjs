@@ -21,6 +21,7 @@ export default defineConfig({
           items: [
             { label: 'Remote repositories', link: '/remote-repositories/' },
             { label: 'Running it for a team', link: '/serving-over-http/' },
+            { label: 'Running it in a container', link: '/running-in-a-container/' },
           ],
         },
         {

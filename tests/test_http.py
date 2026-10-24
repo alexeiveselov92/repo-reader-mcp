@@ -1,5 +1,6 @@
 """Streamable HTTP: a shared server behind a bearer token — a real server on 127.0.0.1, answered by the SDK's own client
-and by plain HTTP requests (string JSON-RPC ids, as gateways send them).
+and by plain HTTP requests (string JSON-RPC ids, as gateways send them) — and `/health`, the one path a probe reaches
+without the token.
 """
 
 import json
@@ -15,7 +16,9 @@ import uvicorn
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
+from remotes import make_remote
 
+from repo_reader_mcp.catalog import Catalog, keep_fresh
 from repo_reader_mcp.config import ConfigError, parse_config
 from repo_reader_mcp.server import _address, build_server, http_app
 
@@ -67,6 +70,15 @@ def post(url: str, message: dict, headers: dict[str, str]) -> tuple[int, dict, d
             return response.status, _json(response.read()), dict(response.headers)
     except urllib.error.HTTPError as error:
         return error.code, _json(error.read()), dict(error.headers)
+
+
+def get(url: str, method: str = "GET") -> tuple[int, bytes]:
+    request = urllib.request.Request(url, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as error:
+        return error.code, error.read()
 
 
 def _json(body: bytes) -> dict:
@@ -175,3 +187,81 @@ def test_a_proxy_on_the_same_machine_is_answered(shop, monkeypatch):
     with serving(app) as url:
         status, body, _ = post(url, INITIALIZE, {"Authorization": f"Bearer {TOKEN}", "Host": "code.example.com"})
     assert status == 200 and body["id"] == "gateway-7f"
+
+
+def test_health_is_answered_without_the_token_and_says_nothing_else(shop, monkeypatch):
+    _, app = guarded(shop[0], monkeypatch)
+    with serving(app) as url:
+        status, body = get(url.replace("/mcp", "/health"))
+        head, _ = get(url.replace("/mcp", "/health"), "HEAD")
+    assert status == 200 and head == 200
+    assert json.loads(body) == {"status": "ready"}
+
+
+def test_only_health_itself_passes_without_the_token(shop, monkeypatch):
+    _, app = guarded(shop[0], monkeypatch)
+    with serving(app) as url:
+        root = url.removesuffix("/mcp")
+        for path in ("/health/", "/healthz", "/Health", "/health/../mcp", "/mcp/health", "/"):
+            assert get(root + path)[0] == 401, path
+        status, body, _ = post(root + "/health", INITIALIZE, {})  # MCP sent to /health reaches no tool
+        assert status == 405 and "result" not in body
+        status, body, _ = post(url, {**INITIALIZE, "id": "/health"}, {})
+        assert status == 401 and "result" not in body
+
+
+@pytest.fixture
+def unsynced(shop, tmp_path):
+    """A configuration mirroring the shop from a made-up remote, never synced yet; its mirrors' folder."""
+    remote = make_remote(shop[0], tmp_path / "remotes" / "shop.git")
+    folder = tmp_path / "mirrors"
+    data = {
+        "repositories": [{"name": "shop", "url": f"file://{remote}"}],
+        "mirrors": {"folder": str(folder)},
+        "http": {"behind_gateway": True},
+    }
+    return parse_config(data, tmp_path)
+
+
+def test_health_waits_for_the_first_sync(unsynced):
+    catalog = Catalog(unsynced)
+    with serving(http_app(build_server(unsynced, catalog), unsynced, "127.0.0.1")) as url:
+        health = url.replace("/mcp", "/health")
+        status, body = get(health)
+        assert status == 503 and json.loads(body) == {"status": "syncing"}  # no repository named
+        keep_fresh(catalog, 0).join(30)
+        status, body = get(health)
+    assert status == 200 and json.loads(body) == {"status": "ready"}
+
+
+def test_a_restart_over_kept_mirrors_is_ready_at_once(unsynced):
+    keep_fresh(Catalog(unsynced), 0).join(30)
+    assert Catalog(unsynced).ready.is_set()  # a new process, the mirrors' folder kept: no round has run in it
+
+
+def test_a_first_round_that_fails_still_ends_the_wait(tmp_path):
+    data = {"repositories": [{"name": "shop", "url": f"file://{tmp_path}/nowhere.git"}]}
+    catalog = Catalog(parse_config({**data, "mirrors": {"folder": str(tmp_path / "mirrors")}}, tmp_path))
+    assert not catalog.ready.is_set()
+    keep_fresh(catalog, 0).join(30)
+    assert catalog.ready.is_set() and not catalog.mirrors()[0].ready  # served as it is: its tools say it isn't made
+
+
+def test_local_repositories_are_ready_at_once(shop):
+    path = shop[0]
+    assert Catalog(parse_config({"repositories": [{"name": "shop", "path": str(path)}]}, path.parent)).ready.is_set()
+
+
+def test_probes_are_left_out_of_the_access_log():
+    import logging
+
+    from repo_reader_mcp.server import QuietProbes
+
+    def line(path: str, method: str = "GET") -> logging.LogRecord:  # as uvicorn's access log makes one
+        args = ("10.0.0.7:5100", method, path, "1.1", 200)
+        return logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d', args, None)
+
+    quiet = QuietProbes()
+    assert not quiet.filter(line("/health")) and not quiet.filter(line("/health", "HEAD"))
+    assert quiet.filter(line("/mcp")) and quiet.filter(line("/health?x=1")) and quiet.filter(line("/healthz"))
+    assert quiet.filter(line("/health", "POST")) and quiet.filter(line("/health", "DELETE"))  # not a probe: logged

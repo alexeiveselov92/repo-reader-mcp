@@ -456,3 +456,43 @@ def test_repositories_of_a_gitlab_group_that_share_a_name_are_all_served(host, t
     assert catalog["legacy.api"].mirror.remote.url == f"{host.base}/acme/backend/legacy/api.git"
     assert "acme/backend/team/upstream-lib: a fork (`forks: true` takes forks)" in catalog.listings[0].left_out
     assert list(Catalog(config)) == ["api", "legacy.api", "svc"]  # the kept listing, read again at a restart
+
+
+def test_a_group_is_ready_once_listed_and_mirrored_and_stays_so(host, tmp_path):
+    import repo_reader_mcp.catalog as catalog_module
+
+    config = grouped(host, tmp_path / "mirrors", GROUP)
+    catalog = Catalog(config)
+    assert not catalog.ready.is_set()  # no listing yet: the members aren't known
+    catalog.refresh()
+    assert not catalog.ready.is_set()  # listed, its mirrors not made — and no round is over
+    catalog_module.keep_fresh(catalog, 0).join(30)
+    assert catalog.ready.is_set()
+    again = Catalog(config)  # a restart: the listing and the mirrors kept on disk — ready before any round
+    assert again.ready.is_set()
+    hosted(host.root, "acme/shop-new")  # joined while the server was down: its mirror isn't made yet
+    host.api[ORG] = [*host.api[ORG], github_item("acme/shop-new")]
+    again.refresh()
+    assert "shop-new" in again and not again["shop-new"].mirror.ready and again.ready.is_set()  # no flap back to 503
+
+
+async def test_a_group_its_host_never_listed_says_so(host, tmp_path):
+    config = grouped(host, tmp_path / "mirrors", GROUP)
+    host.api_status = 500
+    ((_, _, worked),) = Catalog(config).refresh()
+    assert not worked
+    text, error = await ask(config, "list_repos")
+    assert not error and "No repositories are served yet" in text
+    label = config.groups[0].label
+    assert f"`{label}` is not listed yet: listing it failed — {host.base} answered 500" in text and TOKEN not in text
+    text, error = await ask(config, "read_file", repo="shop-api", path="README.md")
+    assert error and "known: none yet;" in text and f"`{label}` is not listed yet" in text
+
+
+async def test_beside_other_repositories_a_group_not_listed_yet_is_named(host, tmp_path, shop):
+    config = grouped(host, tmp_path / "mirrors", GROUP, {"name": "local", "path": str(shop[0])})
+    host.api_status = 500
+    Catalog(config).refresh()
+    text, error = await ask(config, "list_repos")
+    assert not error and "## local" in text
+    assert f"Not served yet: the group `{config.groups[0].label}` is not listed yet: listing it failed" in text

@@ -14,9 +14,11 @@ many repositories — without ever changing them.
 ```bash
 uvx repo-reader-mcp --config config.yaml --check   # with uv: nothing else to install
 pip install repo-reader-mcp                          # or into an environment of your own
+docker run --read-only --tmpfs /tmp -v "$PWD/config:/config:ro" -v repo-mirrors:/data -e REPO_READER_MCP_TOKEN \
+  -p 8000:8000 ghcr.io/alexeiveselov92/repo-reader-mcp:0.2.0   # or its image, over HTTP
 ```
 
-Python 3.12+ and git 2.31+. Then [say which repositories it reads and connect your agent](https://rrm.pipelab.dev/getting-started/).
+Python 3.12+ and git 2.31+; the image holds both ([running it in a container](https://rrm.pipelab.dev/running-in-a-container/)). Then [say which repositories it reads and connect your agent](https://rrm.pipelab.dev/getting-started/).
 
 ## Why
 

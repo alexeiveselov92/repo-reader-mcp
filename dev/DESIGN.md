@@ -234,6 +234,29 @@ on a non-loopback address one of them is required. On loopback the SDK's DNS-reb
 `127.0.0.1` / `localhost` / `[::1]` as the Host. JSON-RPC ids may be strings or numbers. Checked with Claude Code and
 the MCP Inspector (the TypeScript SDK's client), over stdio and HTTP.
 
+**`/health`** (built 2026-10-24, milestone 6): a custom route the bearer middleware lets through for exactly that path
+of an HTTP request, nothing else. `200 {"status": "ready"}` once `Catalog.ready` is set — at start when every group
+has a kept listing and every mirror is made (a restart over a kept folder), or when the first sync round is over
+(whatever it achieved); `503 {"status": "syncing"}` before. Never cleared: a host failing later, or a member joining
+and not mirrored yet, takes nothing from what is served (a check computed at each probe flapped — the fourth review).
+It names nothing and reads nothing; a GET or HEAD of it is left out of uvicorn's access log (`QuietProbes`). For a
+readiness probe — a liveness probe on it would restart a server in its first, minutes-long sync. A group no host has
+listed yet is named by `list_repos` and by the unknown-repository error, with the host's error (`Catalog.unlisted`):
+a server ready after a failed first listing doesn't pass for one with nothing configured.
+
+**The container image** (built 2026-10-24, milestone 6; the root `Dockerfile`, `Dockerfile.dockerignore` an allow-list
+of what it is built from): `python:3.12-slim-trixie`, git 2.47 (asserted ≥ 2.44 at build: `GIT_NO_LAZY_FETCH`), an ssh
+client, Perl's modules and git's manual purged (perl-base stays); user `reader` 10001 named in `/etc/passwd` (ssh refuses to run for a uid with no
+name); `HOME=/home/reader`; `XDG_CACHE_HOME=/data`, so the default `mirrors.folder` is `/data/repo-reader-mcp` with no
+configuration of its own; `REPO_READER_MCP_CONFIG=/config/config.yaml`; `CMD --http 0.0.0.0:8000` (the configuration
+must then say a token or a gateway). Runs on a read-only root with `/tmp` (git's stderr goes through temporary files)
+and `/data` writable. `safe.directory` is not relaxed in the image: a mounted local repository of another owner is
+refused at start with a message naming the two ways out (run as its owner, or `safe.directory` in a git configuration
+named by `GIT_CONFIG_GLOBAL`). `.github/workflows/image.yml` builds it for each platform on every push and pull
+request and tries each (`.github/scripts/try-image.sh`: read-only, mirroring this repository by https, ready, `401`
+without the token, a file read with it; arm64 under emulation); for a tag `v*` only it publishes both from the same
+cached layers — tagged with the version and `sha-…`, never `latest` — and tries the published image again.
+
 ## Documentation, distribution and hosting
 
 - **Documentation**: `docs/` is the single source of the public documentation. The site is built from it with Astro +

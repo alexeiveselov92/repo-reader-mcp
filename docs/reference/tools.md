@@ -45,7 +45,9 @@ whether only part of it is served, and whether it carries [guidance for agents](
 it came from, if it did), when it last synced, and why the last sync failed if it did; one not mirrored yet says so.
 Its description is the configuration's, and for a group's repository, the host's after it. Repositories configured
 with `listed: false` are not shown. A group's repositories are those its host listed at the last sync: the set can
-change between two calls.
+change between two calls. A group that no host has listed yet is named at the end, with why if listing it failed
+(`Not served yet: the group … is not listed yet: listing it failed — …`). The error of a tool given an unknown
+repository names such groups too.
 
 ```
 ## shop

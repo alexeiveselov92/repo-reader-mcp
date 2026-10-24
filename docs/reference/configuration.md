@@ -103,7 +103,7 @@ Where remote repositories are mirrored, and how often ([how mirrors work](../rem
 
 | Key | Default | |
 |---|---|---|
-| `folder` | `~/.cache/repo-reader-mcp` | The folder mirrors live in (`$XDG_CACHE_HOME/repo-reader-mcp` when that is set). `~` is expanded; a relative path is taken from the configuration file's folder. Made at the first sync. |
+| `folder` | `~/.cache/repo-reader-mcp` | The folder mirrors live in (`$XDG_CACHE_HOME/repo-reader-mcp` when that is set; `/data/repo-reader-mcp` in the [container image](../running-in-a-container.md)). `~` is expanded; a relative path is taken from the configuration file's folder. Made at the first sync. |
 | `every_minutes` | 10 | How often each mirror is brought up to date, from 0 to 1440. The server syncs at start, then this often; `0` syncs at start only. |
 
 ## `http`

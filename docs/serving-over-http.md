@@ -75,7 +75,12 @@ Bearer …" --method tools/list`).
 - **Plain JSON answers**, not event streams: what gateways and proxies pass through unchanged.
 - **Request ids as strings or numbers**, answered as they were sent — gateways often send strings.
 
+## In a container, behind a gateway
+
+The [container image](running-in-a-container.md) serves this way by default. `/health` answers a readiness probe without
+the token, and that page says how to put the server behind an MCP gateway.
+
 ## Not yet
 
-One token for everyone (no per-person tokens or access rights per repository), no published container image and no
-health endpoint: they come with the release (`dev/PLAN.md`).
+One token for everyone: no per-person tokens or access rights per repository. Everyone who may call reads every
+repository the configuration serves; a gateway in front decides who may call.

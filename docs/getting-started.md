@@ -1,7 +1,8 @@
 # Getting started
 
 repo-reader-mcp lets an AI agent read git repositories — any branch, tag or commit, the history, diffs, blame — and
-never change them. This page runs it over stdio, for one person's agent. (A container image comes later.)
+never change them. This page runs it over stdio, for one person's agent; for a team, [run it over
+HTTP](serving-over-http.md) or [in a container](running-in-a-container.md).
 
 ## 1. Get it
 

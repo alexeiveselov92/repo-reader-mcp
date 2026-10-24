@@ -169,6 +169,12 @@ class Catalog(Mapping[str, Repository]):
         self._pinned: ContextVar[dict[str, Repository] | None] = ContextVar(f"catalog-{id(self)}", default=None)
         self._current: dict[str, Repository] = {}
         self._current = self._build()
+        # Whether the repositories can be read (`/health`): set at start when a kept mirrors folder holds every group's
+        # listing and every mirror — a restart serves at once — or else when the first round is over, whatever it
+        # achieved. Never cleared: a member that joins, or a host that fails, later takes nothing from what is served.
+        self.ready = threading.Event()
+        if all(listing.listed is not None for listing in self.listings) and all(m.ready for m in self.mirrors()):
+            self.ready.set()
 
     @contextmanager
     def pinned(self) -> Iterator[None]:
@@ -199,6 +205,15 @@ class Catalog(Mapping[str, Repository]):
 
     def mirrors(self) -> list[Mirror]:
         return [repo.mirror for repo in self._now().values() if repo.mirror is not None]
+
+    def unlisted(self) -> list[str]:
+        """The groups no host has listed yet — their repositories unknown — each with why, when listing it failed."""
+        lines = []
+        for group, listing in zip(self.config.groups, self.listings, strict=True):
+            if listing.listed is None:
+                why = f": listing it failed — {listing.error}" if listing.error else ""
+                lines.append(f"the group `{group.label}` is not listed yet{why}")
+        return lines
 
     def scrub(self, text: str) -> str:
         """Text with every token the configuration names taken out."""
@@ -301,6 +316,7 @@ def keep_fresh(catalog: Catalog, every_minutes: int) -> threading.Thread:
                 sync_round(catalog)
             except Exception as error:  # a round that fails never ends the loop: the next one tries again
                 log.error("a sync round failed: %s", catalog.scrub(f"{type(error).__name__}: {error}"))
+            catalog.ready.set()
             if not every_minutes:
                 return
             time.sleep(every_minutes * 60)

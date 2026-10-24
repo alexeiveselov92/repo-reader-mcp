@@ -58,9 +58,10 @@ with something visible: a real agent answering through the server.
 
 ## Milestone 6. Ready to deploy, proved by a real installation — 1 session
 
-- [ ] A container image of the server on GHCR (`ghcr.io/alexeiveselov92/repo-reader-mcp`), built by CI on every push:
+- [x] A container image of the server on GHCR (`ghcr.io/alexeiveselov92/repo-reader-mcp`), built by CI on every push:
       the configuration and the mirrors' folder mounted, secrets by environment; a health endpoint for a gateway or an
-      orchestrator; the guide's page on running it in a container and behind an MCP gateway.
+      orchestrator; the guide's page on running it in a container and behind an MCP gateway. — 2026-10-24: built,
+      run read-only against a real https mirror and a mounted repository, published with 0.2.0.
 - [ ] Proved by a company applying it in its own repositories — its configuration, guidance and deployment kept
       there, never here. What it needs that the server lacks comes back as general requirements, shown with made-up
       examples. (pipelab hosts the docs site only, not an instance.)

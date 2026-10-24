@@ -282,3 +282,41 @@ such an installation; what it needs comes back here as general requirements with
 
 **Decision** (the author chose). Short and without a hyphen, as the author's other projects (`dtk`, `swm`). The first
 address, `repo-reader.pipelab.dev`, answers `301` to it keeping the path — 0.1.0's PyPI metadata points there.
+
+## 2026-10-24 · `/health` waits for the first sync, then stays ready
+
+**Decision** (proposed, the author agreed). `503` until the first sync round since start is over, then `200` for good. A
+gateway or an orchestrator sends no traffic to a server whose mirrors aren't made yet (a first sync of ~90 repositories
+took ~100 s), and a host failing later never takes a serving server out: what was synced is still read. A restart over a
+kept mirrors folder is ready at once. The answer says `ready` or `syncing` and nothing else — it is the one path served
+without the token. The alternative, `200` whenever the process lives, would send agents to empty mirrors at every start.
+
+## 2026-10-24 · The image: published per release only, its mirrors on a volume, nothing relaxed
+
+**Decision** (made while building, on the pattern of the author's semantic-warehouse-mcp). The image is built and tried
+on every change but published only for a tag `v*`, as the version and its commit, never `latest` — an upgrade is the
+operator's choice. The mirrors go to `/data` through `XDG_CACHE_HOME`, so a configuration written for a machine works in
+the image unchanged. git's `safe.directory` is not set to `*` in the image: it guards against a repository someone else
+set up, and only the operator knows which mounted folders are theirs — the server names the problem and the way out
+instead.
+
+## 2026-10-24 · The fourth refuting review's findings (the image, `/health`; all closed)
+
+A second agent tried ~15 ways around the token through `/health` (encodings, `//health`, absolute-form targets, dot
+segments, JSON-RPC posted to it, upgrades): none reached the MCP app. Its findings, each closed:
+1. Readiness computed at each probe went back to `503` after a restart when a group's new member wasn't mirrored yet —
+   now an event set once (at start over a kept folder, or when the first round ends), never cleared; test with a member
+   joining after the restart.
+2. The guide's `--check` / `--sync` examples lacked the bearer token's variable, which the configuration requires —
+   added, and said why.
+3. A failed first listing left a ready server answering "No repositories are configured" — `list_repos` and the
+   unknown-repository error now name the groups not listed yet, with the host's error; tests fail without each.
+4. The access-log filter hid every request to `/health` — now GET and HEAD only; test.
+5. "Nothing waits long" overstated: the limits are per git command and per fetch — reworded.
+6. Perl was not wholly removed (`perl-base` is essential) and a derived image's `apt-get` needed `-f` — said in the
+   Dockerfile, checked with a derived build.
+7. The Compose healthcheck went through `HTTP_PROXY` — it opens with no proxy now; checked with a dead proxy set.
+8. The published image was a second build never run, arm64 never at all — both platforms are now built and tried, the
+   publish reuses their cached layers, and the published image is tried after the push.
+9. The ssh advice was stricter than ssh (a Secret mounted `0440` with `fsGroup` works) and `--user` breaks ssh — both
+   said.

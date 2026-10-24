@@ -625,7 +625,7 @@ def parse_config(data: Any, base: Path, source: str = "") -> Config:
             try:
                 git_dir = find_git_dir(str(path))
             except GitError as error:
-                problems.append(f"{where} → path: {path} is not a git repository's top: {error}")
+                problems.append(f"{where} → path: {path}: {error}")
                 continue
         for j, origin in enumerate(repo.guidance.sources):
             if origin.repo not in names or origin.repo == name:

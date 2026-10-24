@@ -5,6 +5,7 @@ commit it was read at, sized to `limits.answer_characters`; a cut answer says so
 from __future__ import annotations
 
 import inspect
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from fnmatch import fnmatchcase
@@ -134,12 +135,17 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
     def room() -> int:
         return BUDGET.get() or limit
 
+    def known(repositories: Mapping[str, Repository]) -> str:
+        """The names an agent may give — and the groups not listed yet, whose repositories can't be named so far."""
+        waiting = catalog.unlisted()
+        names = ", ".join(sorted(repositories)) or ("none yet" if waiting else "none are configured")
+        return names + "".join(f"; {line}" for line in waiting)
+
     def repo_named(name: str) -> Repository:
         repositories = catalog.listed()  # what agents may name
         if name in repositories:
             return repositories[name]
-        known = ", ".join(sorted(repositories)) or "none are configured"
-        raise ToolError(f"no repository named `{name}` — known: {known}")
+        raise ToolError(f"no repository named `{name}` — known: {known(repositories)}")
 
     def path_of(path: str, *, allow_root: bool = False) -> str:
         try:
@@ -225,7 +231,10 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
         tags, and what of it is served. Call it first; the other tools take a repository's name as `repo`."""
         answer = Answer(room())
         repositories = catalog.listed()
+        waiting = catalog.unlisted()
         if not repositories:
+            if waiting:
+                return f"No repositories are served yet: {'; '.join(waiting)}. The server tries again on its own.\n"
             return "No repositories are configured on this server.\n"
         count = _plural(len(repositories), "repository", "repositories")
         answer.add(f"{count} — read-only. Name one as `repo` in the other tools.")
@@ -261,6 +270,9 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
                     f'Guidance for agents: {_plural(pieces, "piece")} — read_guidance(repo="{repo.name}") '
                     "before you work with it."
                 )
+        if waiting:
+            answer.add()
+            answer.add("Not served yet: " + "; ".join(waiting) + ". The server tries again on its own.")
         return answer.text("cut: more repositories than fit" if answer.full else None)
 
     # --- list_refs ------------------------------------------------------------------------------------------------
@@ -685,8 +697,8 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
         if repos:
             unknown = [name for name in repos if name not in every]
             if unknown:
-                known = ", ".join(sorted(every)) or "none are configured"
-                raise ToolError(f"no repository named {', '.join(f'`{n}`' for n in unknown)} — known: {known}")
+                names = ", ".join(f"`{n}`" for n in unknown)
+                raise ToolError(f"no repository named {names} — known: {known(every)}")
             chosen = [every[name] for name in dict.fromkeys(repos)]
         else:
             chosen = list(every.values())

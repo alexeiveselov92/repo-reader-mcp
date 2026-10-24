@@ -1,0 +1,9 @@
+# What the server's image (Dockerfile) is built from — and nothing else. The docs site's image (website/Dockerfile)
+# is built from the same folder and doesn't read this file.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+!src
+**/__pycache__

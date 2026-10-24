@@ -150,8 +150,16 @@ def find_git_dir(path: str) -> str:
             check=False,
         )
         if done.returncode != 0:
-            message = done.stderr.decode("utf-8", errors="replace").strip().splitlines()
-            raise GitError(message[-1] if message else "not a git repository", done.stderr.decode(errors="replace"))
+            stderr = done.stderr.decode("utf-8", errors="replace")
+            if "dubious ownership" in stderr:  # git's own guard (`safe.directory`), as in a container with a mount
+                raise GitError(
+                    "it belongs to another user than the one the server runs as, and git won't read it: run the "
+                    "server as the folder's owner, or name the folder in `safe.directory` of a git configuration the "
+                    "server reads (GIT_CONFIG_GLOBAL)",
+                    stderr,
+                )
+            said = stderr.strip().splitlines()
+            raise GitError(f"it is not a git repository's top: {said[-1] if said else 'git said nothing'}", stderr)
         return done.stdout.decode("utf-8", errors="replace").strip()
 
     git_dir, bare = ask("--absolute-git-dir", "--is-bare-repository").splitlines()

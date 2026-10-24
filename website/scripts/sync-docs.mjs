@@ -26,6 +26,7 @@ const PAGES = [
   { src: 'docs/getting-started.md', dest: 'getting-started.md' },
   { src: 'docs/remote-repositories.md', dest: 'remote-repositories.md' },
   { src: 'docs/serving-over-http.md', dest: 'serving-over-http.md' },
+  { src: 'docs/running-in-a-container.md', dest: 'running-in-a-container.md' },
   { src: 'docs/reference/tools.md', dest: 'reference/tools.md' },
   { src: 'docs/reference/configuration.md', dest: 'reference/configuration.md' },
   { src: 'docs/reference/guidance.md', dest: 'reference/guidance.md' },
