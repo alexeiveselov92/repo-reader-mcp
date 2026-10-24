@@ -10,29 +10,36 @@ with something visible: a real agent answering through the server.
 - [x] A running skeleton: the server over stdio with one tool, its test through the SDK's in-process client,
       lint, CI.
 
-## Milestone 1. One local repository, read-only — 1–2 sessions
+## Milestone 1. Local repositories, read-only — 2 sessions
 
-- [ ] The configuration file (YAML) and its check: a wrong entry stops the server, naming it.
-- [ ] `list_repos`, `list_refs`, `read_file`, `list_files` at any ref of a local repository.
-- [ ] `log`, `show_commit`, `diff`, `blame` — sized answers, the commit named in each.
-- [ ] Tests on made-up repositories built by the tests themselves (real git, no network).
-- [ ] Real Claude Code over stdio answers questions about a test repository.
+- [x] The configuration file (YAML) and its check: a wrong entry stops the server, naming it. (2026-10-24)
+- [x] `list_repos`, `list_refs`, `read_file`, `list_files` at any ref of a local repository. (2026-10-24)
+- [x] `log`, `show_commit`, `diff`, `blame` — sized answers, the commit named in each. (2026-10-24)
+- [x] Tests on made-up repositories built by the tests themselves (real git, no network); every protection with a test
+      that fails when it is removed (checked by taking each out). (2026-10-24)
+- [x] Real Claude Code over stdio answers questions about a test repository. (2026-10-24)
+- [ ] Repositories' guidance for agents (`dev/DESIGN.md`): the repository's own `AGENTS.md` / `CLAUDE.md` / rules /
+      skills, text and files from the configuration, a folder of another repository (`from`); delivered with the first
+      answer about a repository and the first touch of a scoped path; `read_guidance`; `--check` warns about guidance
+      outside `include`. Seen working: Claude Code following a rule it could not have guessed from the code.
 
-## Milestone 2. The docs site — 1 session
+## Milestone 2. Remote repositories — 2 sessions
+
+- [ ] Mirrors: partial clones from any git URL, a token by variable name, `refs` kept fresh on a schedule,
+      force-pushes followed; `include` / `exclude`; nothing fetched outside them (counted from the mirror).
+- [ ] Groups: `github: owner/prefix-*` (and GitLab's groups) resolved from the host on every sync — new repositories
+      join, archived ones leave; `skip` (names or patterns); the entry's settings and guidance apply to every member.
+- [ ] Hosts: GitHub, GitLab, any git server — links to the host's pages where it has them.
+- [ ] Streamable HTTP with a bearer token; a second MCP client checked (not Claude).
+
+## Milestone 3. The docs site — 1 session
 
 - [ ] `website/` — Astro + Starlight built from `docs/`, the author's detectkit pattern (`../detectkit/website`: the
       `sync-docs` script importing `docs/`, the nginx Dockerfile, the `website.yml` workflow pushing the image to GHCR and
       sending `repository_dispatch` to pipelab).
 - [ ] In pipelab (`../pipelab`, under its own rules): the site at `repo-reader.pipelab.dev` — a compose service
       behind Traefik and its `deploy-*.yml`, as detectkit's site is served.
-- [ ] The guide as it stands after milestone 1 published there; from now on every milestone's pages go live with it.
-
-## Milestone 3. Remote repositories — 2 sessions
-
-- [ ] Mirrors: partial clones from any git URL, a token by variable name, `refs` kept fresh on a schedule,
-      force-pushes followed; `include` / `exclude`; nothing fetched outside them (counted from the mirror).
-- [ ] Hosts: GitHub, GitLab, any git server — links to the host's pages where it has them.
-- [ ] Streamable HTTP with a bearer token; a second MCP client checked (not Claude).
+- [ ] The guide as it stands after milestone 2 published there; from now on every milestone's pages go live with it.
 
 ## Milestone 4. Search and safety — 2 sessions
 

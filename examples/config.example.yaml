@@ -1,24 +1,29 @@
-# A DRAFT of the configuration (dev/DESIGN.md) — not read by the server yet. Made-up names only.
+# An example configuration (docs/reference/configuration.md). Made-up names only.
 # Secrets are named by the environment variable that holds them, never written here.
 
 repositories:
   - name: shop-backend
-    url: https://github.com/acme/shop-backend.git
-    token_env: GITHUB_TOKEN             # read-only
-    refs: [main, "release/*"]           # kept fresh; any other commit readable on demand
-    include: ["src/**", "docs/**"]      # only these paths are ever fetched
-    exclude: ["**/fixtures/**"]
+    path: /srv/code/shop-backend         # a checkout or a bare repository; relative paths start at this file's folder
+    description: The shop's backend — orders, payments, the public API.
+    exclude: ["**/fixtures/**", "*.pem", "*.env"]
 
-  - name: shop-frontend
-    url: https://gitlab.example.com/acme/shop-frontend.git
-    token_env: GITLAB_TOKEN
-    refs: [main]
-
-  - name: local-notes
-    path: /srv/notes                    # a local checkout, read as it is
-
-sync:
-  every_minutes: 10
+  - name: handbook
+    path: /srv/code/handbook
+    include: ["docs/**", "README.md"]    # only these are ever served; a folder added later stays out
 
 limits:
-  answer_characters: 40000              # clients cut long answers; a cut answer says so
+  answer_characters: 40000               # clients cut long answers; a cut answer says so
+
+# Planned (dev/PLAN.md, milestone 2) — refused with a message today:
+#
+#  - name: shop-frontend
+#    url: https://gitlab.example.com/acme/shop-frontend.git
+#    token_env: GITLAB_TOKEN             # read-only
+#    refs: [main, "release/*"]           # kept fresh; any other commit readable on demand
+#
+#  - github: acme/shop-*                 # a group: every repository whose name matches
+#    token_env: GITHUB_TOKEN
+#    skip: [acme/shop-sandbox]
+#
+# sync:
+#   every_minutes: 10

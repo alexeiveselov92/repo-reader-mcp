@@ -30,3 +30,56 @@ general.
 - **Apache-2.0**: an explicit patent grant; the license companies take in most easily.
 - **Written fresh**: the earlier platform's code belongs to the company it was written for. Its lessons are
   carried as design ([DESIGN.md](DESIGN.md), "Safety"), not as code.
+
+## 2026-10-24 · Reading: committed content only, through git itself, never a checkout
+
+**Decision** (the author agreed). The server reads commits — never a checkout's working files — through git's own
+commands from a fixed set, arguments as a list, no Python git library. A ref an agent gives is checked (no leading `-`,
+no whitespace) and resolved to a commit id; only the id reaches later commands. Paths are looked up in the commit's
+tree, after `--`, literally.
+
+**Why.** Reading commits is what lets many people read different branches of one repository at the same moment (no
+working folder to share), and it keeps uncommitted files (a local `.env`) out. Git's own commands are the ones that
+behave on a partial mirror (milestone 2). Resolving refs first closes a real hole: a branch can be named
+`--output=<file>`, and `git diff` given that name writes the file (tried 2026-10-24).
+
+## 2026-10-24 · include / exclude follow `.gitignore`'s habits; what is outside is never told
+
+- A pattern with no `/` matches at any depth; a pattern naming a folder takes everything in it; `**` spans folders;
+  brackets are literal. Chosen so an `exclude` written the way people write `.gitignore` keeps out what they meant.
+- An excluded path is refused by name ("outside what this server serves"), judged by the path alone — never by whether
+  it exists or changed. A commit's or a diff's file list says how many files it doesn't show, never which.
+
+## 2026-10-24 · Answers in plain text that names the commit; capped; a few things left out on purpose
+
+- Every answer is text with a header naming the repository, the ref and the commit; capped at
+  `limits.answer_characters` (40,000 by default), with a note saying how to continue (`start_line`, `skip`, `path`).
+- Left out on purpose: authors' emails (names only); file sizes in listings and renames in history (both make git
+  fetch contents on a partial mirror); colour.
+
+## 2026-10-24 · Repositories' guidance for agents (the author's request)
+
+**Decision** (the author). A repository's rules for agents (`AGENTS.md`, `CLAUDE.md`, `.claude/rules/`, skills…) reach
+an agent reading it through the server as instructions, the way a client loads them for a folder it is opened in. More
+sources beside the repository's own: text in the configuration, files on the server's disk, and a folder of another
+configured repository (`from`) — a company keeps its rules about a repository in its own repository. Read from the
+default branch only; obeys `include` / `exclude`. Design in `dev/DESIGN.md`, "Repositories' guidance for agents".
+
+**Why.** An agent outside the repository's folder loads none of its owners' rules, and those rules are what the
+repository was written with. The default branch, because text handed to an agent as instructions can steer it, and any
+branch can be pushed by anyone with access.
+
+## 2026-10-24 · Groups of repositories by name, with exceptions (the author's requirement)
+
+**Decision** (the author). A company has too many repositories to list: an entry can name a group —
+`github: owner/prefix-*` (GitLab's groups alike) — resolved from the host on every sync (new repositories join,
+archived ones leave), with `skip` (names or patterns) for what the pattern catches but shouldn't. The entry's settings
+apply to every member. Milestone 2, with remote repositories.
+
+## 2026-10-24 · Remote repositories before the docs site
+
+**Decision** (the author). Milestone 2 is now remote repositories (mirrors, groups, Streamable HTTP); the docs site
+follows as milestone 3.
+
+**Why.** The target is a shared server over a company's many remote repositories; the reading built in milestone 1
+serves it unchanged, and the site can publish the guide once that is true.

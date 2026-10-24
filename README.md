@@ -4,8 +4,9 @@ A read-only [MCP](https://modelcontextprotocol.io) server that lets any AI agent
 in git repositories — files at any branch, tag or commit, the history, diffs, blame and search across
 many repositories — without ever changing them.
 
-> **Status: pre-alpha, being designed.** Nothing here is ready to use yet. The plan is in
-> [dev/PLAN.md](dev/PLAN.md), the design in [dev/DESIGN.md](dev/DESIGN.md).
+> **Status: pre-alpha.** It reads local repositories today — any branch, tag or commit, history, diffs, blame —
+> from a clone of this source ([getting started](docs/getting-started.md)). Remote repositories, search and a
+> published package are next: the plan is in [dev/PLAN.md](dev/PLAN.md), the design in [dev/DESIGN.md](dev/DESIGN.md).
 
 ## Why
 
@@ -27,10 +28,11 @@ whole team.
 - **Any MCP client**: stdio for a local agent, Streamable HTTP for a shared server — Claude, ChatGPT,
   Cursor, Codex, any client that speaks MCP.
 
-## Configuration (planned)
+## Configuration
 
 One YAML file names the repositories and what to take from them; secrets are named, never written in it.
-A draft is in [examples/config.example.yaml](examples/config.example.yaml).
+An example is in [examples/config.example.yaml](examples/config.example.yaml); every key is in
+[docs/reference/configuration.md](docs/reference/configuration.md). The documentation starts at [docs/](docs/README.md).
 
 ## Development
 
@@ -40,7 +42,8 @@ Python 3.12, [uv](https://docs.astral.sh/uv/), the official [MCP Python SDK](htt
 uv sync
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
-uv run repo-reader-mcp            # the server over stdio
+uv run repo-reader-mcp --config my-config.yaml --check                 # check a configuration
+uv run repo-reader-mcp --config my-config.yaml                         # the server over stdio
 ```
 
 ## License

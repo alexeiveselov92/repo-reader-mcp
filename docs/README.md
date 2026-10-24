@@ -7,13 +7,15 @@ How the project is built and planned is not here: that is `dev/` (design, plan, 
 
 ## Pages
 
-Written now: [Reference — tools](reference/tools.md). Planned, each written with the change that makes it true:
+- [Getting started](getting-started.md) — run it from a clone, say which repositories it reads, connect it to an agent,
+  ask.
+- **Reference**
+  - [Tools](reference/tools.md) — every tool, its inputs and its answer.
+  - [Configuration](reference/configuration.md) — the file, every key, the patterns of `include` / `exclude`, limits.
+  - [Safety](reference/safety.md) — what it never does, and what it doesn't do yet.
 
-- **Getting started** — install (`uvx repo-reader-mcp`), connect it to an MCP client (Claude Code, Claude, ChatGPT,
-  Cursor, Codex), a first question about a repository.
-- **Guides** — configuring repositories (local and remote, refs, `include` / `exclude`, tokens by name); running it
-  for a team (Streamable HTTP, a container); what an agent can ask.
-- **Reference** — every tool, its inputs and answers; the configuration file; limits; safety (what it never does).
+Planned, each written with the change that makes it true: remote repositories and running it for a team (Streamable
+HTTP, a container); repositories' own guidance for agents; search and grep; a contributing page.
 
 Three readers: people who use it through their agent (getting started, guides), people who run it (guides,
 reference), people who contribute (a contributing page). A page is written in the same commit as the change that makes

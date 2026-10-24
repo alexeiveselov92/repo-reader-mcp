@@ -26,6 +26,11 @@ construction rather than by convention.
   `exclude` alone.
 - Clients cut long answers (Claude Code near 25,000 tokens): every answer is capped and says so.
 - Gateways in front of MCP servers send string JSON-RPC ids; a server that only answers numbers stalls them.
+- A company has too many repositories to list one by one: a group by name pattern, resolved from the host on every
+  run (new repositories join, archived ones leave), is how both the earlier platform and a company workspace's sync
+  scripts take them; a pattern catches more than wanted, so a group needs exceptions.
+- A company keeps knowledge *about* a codebase apart from it — rules, maps, skills written for agents in another
+  repository — and attaches it to a group of repositories at once.
 
 ## The MCP Python SDK
 
