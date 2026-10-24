@@ -59,11 +59,33 @@ Only the [sync](../remote-repositories.md) reaches a host, and only for the mirr
 - **No submodules, no tags it wasn't asked for**: `--recurse-submodules=no`, `--no-tags`. A tag of a folder or of a
   file's contents (rather than of a commit) is not kept: its paths are not the repository's, so include / exclude
   can't judge them. (Git sends what a ref names: a tag of a file's contents brings that one file, which nothing reads.)
-- **A mirror per configuration.** A mirror's folder is named by a digest of its URL, `refs`, `include` and `exclude`:
-  another server on the same machine, or this configuration changed, gets a mirror of its own — never the branches or
-  contents another configuration took.
+- **A mirror per configuration.** A mirror's folder is named by a digest of its URL, `refs`, `include`, `exclude` and
+  the name of the token's variable: another server on the same machine, or this configuration changed, gets a mirror of
+  its own — never the branches or contents another configuration took, nor what was fetched with a token by a
+  configuration that names none. (Two servers whose variables share a name but hold different tokens would share it:
+  give them different mirror folders.)
 - **A file's id tells nothing.** A file's id is its contents' digest; given as a ref, the id of contents a mirror lacks
   answers as an unknown name does, so an agent can't confirm contents it guessed.
+
+## A group's listing
+
+A [group](../remote-repositories.md#groups) is listed by the host's API — reading requests only, to that API only:
+
+- **No redirect is followed**, and a next page that points outside the API (another host, or another path on it) is
+  refused: the token travels with these requests.
+- **Addresses come from the configuration**: a repository's git address is built from the configured host and the path
+  the listing gives — never taken from the listing (its `clone_url` could name any host). A path with a `.` or `..`
+  part, or characters a repository's name can't have, is left out; so is one outside the owner the entry names.
+- **The token never shows**: not in the kept listing, the log, `--check` or an error — a host's message that echoes
+  it has it taken out. A token sent over plain http (to this machine only) never goes through a proxy the environment
+  names.
+- **A host can fail its listing, nothing more**: an answer that isn't HTTP, or isn't JSON the server reads, fails that
+  listing — the group keeps what it had — and never stops the syncs; a page is stopped after 60 seconds however slowly
+  it comes.
+- **The kept listing is checked again** when read at start, as if the host had just sent it: a file written there by
+  anything else can't add a repository the entry doesn't take.
+- **A repository is served once.** A group's repository that is also listed one by one (at the same address, however
+  spelt) is left out of the group: served twice, the copy would ignore the first entry's `include` / `exclude`.
 
 ## Tokens
 
@@ -81,6 +103,18 @@ Only the [sync](../remote-repositories.md) reaches a host, and only for the mirr
   are switched off for the sync — a refused token is never followed by credentials stored for someone else, nor
   stored by a helper — and so is any program asking for a password (`core.askPass`, `SSH_ASKPASS`), which would run
   with the token in its environment.
+
+## Over HTTP, only who may call
+
+- **A bearer token** on every request (`http.token_env`), compared in constant time; any other request is answered
+  `401` with nothing else.
+- **Never open by accident**: on an address other than the machine's own, the server won't start without a token or
+  `http.behind_gateway: true`.
+- **On the machine's own address** — exactly `127.0.0.1`, `localhost` or `::1` — no token is needed, and only requests
+  addressed to it by those names are answered: a web page can't reach it through a domain name that resolves there.
+  Any other address, `127.0.0.2` included, needs a token or a gateway.
+- **One call, one set**: a tool reads the repositories as they were when the call began, whatever a group's listing
+  changes meanwhile.
 
 ## The environment it was started from can't redirect it
 
@@ -113,7 +147,8 @@ shouldn't instruct agents is configured with `own: false`. Guidance obeys `inclu
 Every answer is capped (`limits.answer_characters`) and says when it was cut. Git's output is read up to 4 MB per
 command (a file up to 10 MB) and the command stopped there — a huge tree, history or diff never sits in memory whole;
 the answer says it is partial. One reading git command is stopped after 30 seconds; one that reaches a host, after 30
-minutes.
+minutes. A request to a host's API is stopped after 30 seconds and read up to 32 MB a page; a group lists up to 20,000
+repositories.
 
 ## Not yet
 

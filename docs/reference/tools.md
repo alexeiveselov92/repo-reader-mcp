@@ -14,6 +14,11 @@ Every tool repo-reader-mcp offers to an agent. All are read-only: each says so t
 - **Only what is committed is read.** Files changed but not committed in a checkout, and files never added, are not
   seen — every tool reads the commit a ref points at.
 - **Every answer names where it read**: the repository, the ref and the commit (`main @ a1b2c3d4e5f6 (2026-03-01)`).
+- **A link to the host's own page**, for a repository on GitHub, GitLab or Bitbucket (or a host whose kind the
+  configuration names — `links`): a line under the answer's first, `On GitHub: https://github.com/acme/shop/blob/<commit>/src/app.py#L1-L40`
+  — the file at the commit read and the lines shown (`read_file`, `blame`), the folder (`list_files`), the commit
+  (`show_commit`), the comparison (`diff`, on GitHub and GitLab), the repository (`list_repos`). Links name the commit,
+  so they show what the answer showed even after the branch moves. A local repository has none.
 - **Every answer is capped** at `limits.answer_characters` (40,000 by default — [configuration](configuration.md)). A
   cut answer ends with a note in brackets saying what was left out and how to get it: the `start_line` to continue
   from, the `skip` to page on, or the `path` to narrow to.
@@ -33,8 +38,11 @@ status, `read_only: true` and how many repositories it serves.
 The repositories this server reads. Takes nothing. For each: its name, its description (from the configuration), its
 default branch with the commit it is at, the date and the subject of that commit, how many branches and tags it has,
 whether only part of it is served, and whether it carries [guidance for agents](guidance.md). For a
-[mirrored](../remote-repositories.md) repository, where it is mirrored from, when it last synced, and why the last
-sync failed if it did; one not mirrored yet says so. Repositories configured with `listed: false` are not shown.
+[mirrored](../remote-repositories.md) repository, where it is mirrored from (and the [group](../remote-repositories.md#groups)
+it came from, if it did), when it last synced, and why the last sync failed if it did; one not mirrored yet says so.
+Its description is the configuration's, and for a group's repository, the host's after it. Repositories configured
+with `listed: false` are not shown. A group's repositories are those its host listed at the last sync: the set can
+change between two calls.
 
 ```
 ## shop

@@ -59,11 +59,29 @@ repositories:
     to the loopback only). No redirect with a
     token: git keeps an extra header chosen at the start for every request, wherever a redirect sends them (found by a
     test, 2026-10-24). Without a token, git uses the server account's setup (ssh keys, a credential helper).
-- **Groups** (milestone 2): `github: owner/prefix-*` (and GitLab's groups) — resolved from the host's listing on every
-  sync: a new repository joins, an archived one leaves; `skip` takes names or patterns out (a pattern catches more than
-  wanted). Each member is named by its own repository name; the entry's settings (token, `include` / `exclude`,
-  description, guidance) apply to all of them — written once for dozens of services. The pattern of the author's
-  earlier platform and of a company workspace's sync scripts (`dev/RESEARCH.md`).
+- **Groups** (milestone 2, built 2026-10-24 — `src/repo_reader_mcp/hosts.py`, `catalog.py`): `github: owner/pattern`,
+  `gitlab: group/path/pattern` (`**/` reaches into subgroups), `host` for a GitHub Enterprise or GitLab of one's own,
+  `skip` (names, or patterns matched against the full path when they hold a `/`). Before every sync the host's API
+  lists the owner's repositories (GitHub: the organisation's, else the user's — the user's own token lists their
+  private ones; GitLab: the group's own projects, `with_shared=false`, else the user's): the pattern takes them, `skip`
+  and archived ones leave, a path with `.`/`..` parts or a name the server can't serve is left out. A member is named by
+  its repository's name and served with the entry's settings (token, `refs`, `include` / `exclude`, `listed`,
+  guidance); its description is the entry's, then the host's. The **catalog** (`Catalog`) is the set served: the
+  repositories listed one by one, then each group's members; it is rebuilt after each listing and replaced whole, so a
+  tool reads one consistent set; a member keeps its `Repository` while its settings are unchanged. A name taken by a
+  repository listed one by one, or by an earlier group's member, keeps its first owner (the later one is left out,
+  logged). The last listing is kept as `<kind>-<owner>-<digest>.members.json` in the mirrors folder: a restart serves
+  the members at once, and a host that can't be reached leaves the members as they were. Listing: urllib, `GET` only,
+  no redirect followed, a next page (`Link`) must stay on the API's origin and path, the token as a bearer header (not
+  passed on a redirect even if one were followed), errors scrubbed of it; git addresses built from the host and the
+  listed path — never the listing's `clone_url`. A group's repository can't be a guidance source (`from` names
+  repositories listed one by one). The pattern of the author's earlier platform and of a company workspace's sync
+  scripts (`dev/RESEARCH.md`).
+- **Links to the host's pages** (milestone 2, built 2026-10-24 — `src/repo_reader_mcp/links.py`): GitHub, GitLab and
+  Bitbucket forms for a file at a commit with its lines, a folder, a commit, a comparison (not Bitbucket's, which takes
+  branch names); known from the host's name (github.com, gitlab.com, bitbucket.org), a group's kind, or `links:` for a
+  host of one's own (`none` turns them off). Built from the repository's address and commit ids — never an agent's text;
+  a link names the commit, so it shows what the answer showed after the branch moves.
 - **`include` is an allow-list**: a repository that holds something that must never be read (exports,
   tickets) names what it takes; a folder added later stays out. `exclude` drops from what is taken. Patterns follow
   `.gitignore`'s habits (a pattern with no `/` matches at any depth; a pattern naming a folder takes what is in it), so
@@ -203,8 +221,13 @@ The public account is `docs/reference/safety.md`; each protection has a test tha
 
 ## Transports and clients
 
-stdio for one person's agent; Streamable HTTP for a shared server (a bearer token, or behind the
-organisation's gateway). JSON-RPC ids may be strings or numbers. Checked with more than one client.
+stdio for one person's agent; Streamable HTTP for a shared server (built 2026-10-24 — `--http [HOST:]PORT`, the SDK's
+`streamable_http_app` at `/mcp`, **stateless** and with **JSON answers**: nothing kept between requests, so restarts and
+copies behind a load balancer are invisible to clients, and gateways pass plain JSON through). Who may call: a bearer
+token (`http.token_env`, an ASGI middleware comparing in constant time, `401` otherwise) or `http.behind_gateway: true`;
+on a non-loopback address one of them is required. On loopback the SDK's DNS-rebinding protection answers only
+`127.0.0.1` / `localhost` / `[::1]` as the Host. JSON-RPC ids may be strings or numbers. Checked with Claude Code and
+the MCP Inspector (the TypeScript SDK's client), over stdio and HTTP.
 
 ## Documentation, distribution and hosting
 

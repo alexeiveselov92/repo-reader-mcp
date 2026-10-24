@@ -1,16 +1,18 @@
 """Made-up remote repositories for the mirror tests — no network: served over `file://`, or over HTTP on 127.0.0.1 by
-git's own `http-backend`, which can ask for a token and redirect elsewhere.
+git's own `http-backend`, which can ask for a token and redirect elsewhere — beside a made-up host API that lists them
+as GitHub's or GitLab's does.
 """
 
 from __future__ import annotations
 
 import base64
+import json
 import os
 import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from repos import git
 
@@ -44,13 +46,24 @@ def contents_by_path(git_dir: Path) -> set[tuple[str, str]]:
 class GitHTTP:
     """A smart-HTTP git server on 127.0.0.1 for the repositories under `root`. With `token`, every request must carry
     it as Basic credentials (any other answer is a 401); with `redirect_to`, the first request is sent to that server
-    instead. It records every `Authorization` header it sees."""
+    instead. It records every `Authorization` header it sees.
+
+    Under `/api/` it is a host's API: `api` maps a path to what it answers (a list is paged, with a `Link` to the next
+    page); with `token`, a request must carry it as a bearer token. `api_seen` records each request and its header."""
 
     def __init__(self, root: Path, token: str | None = None, user: str = "x-access-token"):
         self.root = root
+        self.token = token
         self.expected = f"Basic {base64.b64encode(f'{user}:{token}'.encode()).decode()}" if token else None
         self.redirect_to: str | None = None
         self.seen: list[str] = []
+        self.api: dict[str, list | dict] = {}
+        self.api_page_size: int | None = None  # pages of this many, whatever `per_page` asks
+        self.api_next: str | None = None  # the next page given as this address instead of the true one
+        self.api_redirect: str | None = None
+        self.api_status: int | None = None  # every API request answered with this, its message echoing the header
+        self.api_raw = None  # a function (request, header) writing the whole answer itself — anything, not only HTTP
+        self.api_seen: list[tuple[str, str | None]] = []
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -85,9 +98,12 @@ class GitHTTP:
 
     def handle(self, request: BaseHTTPRequestHandler) -> None:
         auth = request.headers.get("Authorization")
+        parts = urlsplit(request.path)
+        if parts.path.startswith("/api/"):
+            self._api(request, parts, auth)
+            return
         if auth:
             self.seen.append(auth)
-        parts = urlsplit(request.path)
         if self.redirect_to and parts.path.endswith("/info/refs"):
             request.send_response(302)
             request.send_header("Location", self.redirect_to + request.path)
@@ -132,6 +148,41 @@ class GitHTTP:
             request.send_header(key, value)
         request.end_headers()
         request.wfile.write(payload)
+
+    def _api(self, request: BaseHTTPRequestHandler, parts, auth: str | None) -> None:
+        self.api_seen.append((request.path, auth))
+
+        def answer(status: int, data, headers=()) -> None:
+            body = json.dumps(data).encode()
+            request.send_response(status)
+            request.send_header("Content-Type", "application/json")
+            request.send_header("Content-Length", str(len(body)))
+            for key, value in headers:
+                request.send_header(key, value)
+            request.end_headers()
+            request.wfile.write(body)
+
+        if self.api_raw:
+            self.api_raw(request, auth)
+        elif self.api_redirect:
+            answer(301, {"message": "Moved Permanently"}, [("Location", self.api_redirect + request.path)])
+        elif self.api_status:
+            answer(self.api_status, {"message": f"made-up failure for {auth}"})
+        elif self.token and auth != f"Bearer {self.token}":
+            answer(401, {"message": "Bad credentials"})
+        elif parts.path not in self.api:
+            answer(404, {"message": "Not Found"})
+        elif isinstance(self.api[parts.path], dict):
+            answer(200, self.api[parts.path])
+        else:
+            items = self.api[parts.path]
+            query = dict(parse_qsl(parts.query))
+            page, size = int(query.get("page", "1")), self.api_page_size or int(query.get("per_page", "30"))
+            headers = []
+            if page * size < len(items):
+                following = self.api_next or f"{self.base}{parts.path}?{urlencode({**query, 'page': page + 1})}"
+                headers.append(("Link", f'<{following}>; rel="next"'))
+            answer(200, items[(page - 1) * size : page * size], headers)
 
     @staticmethod
     def _body(request: BaseHTTPRequestHandler) -> bytes:

@@ -27,6 +27,16 @@ repositories:
 
   - url: git@git.example.com:acme/tools.git   # over ssh: the server account's own keys
 
+  - github: acme/billing-*               # a group: every repository of acme named billing-…, listed on every sync
+    token_env: GITHUB_TOKEN
+    skip: [billing-sandbox, "acme/billing-*-legacy"]   # names or patterns left out; archived ones leave by themselves
+    description: One of the billing services.
+    exclude: ["*.pem", "*.env"]          # the entry's settings apply to every repository of it
+
+  - gitlab: acme/platform/**/svc-*       # GitLab: a group's path; `**/` reaches into its subgroups
+    host: gitlab.example.com             # default gitlab.com (github.com for `github:`)
+    token_env: GITLAB_TOKEN              # read_api and read_repository
+
 mirrors:
   folder: /var/lib/repo-reader-mcp       # default: ~/.cache/repo-reader-mcp
   every_minutes: 10                      # 0: at start only
@@ -37,8 +47,6 @@ guidance:                                # for every repository
 limits:
   answer_characters: 40000               # clients cut long answers; a cut answer says so
 
-# Planned (dev/PLAN.md, milestone 2) — refused with a message today:
-#
-#  - github: acme/shop-*                 # a group: every repository whose name matches
-#    token_env: GITHUB_TOKEN
-#    skip: [acme/shop-sandbox]
+http:                                    # with --http [HOST:]PORT
+  token_env: REPO_READER_MCP_TOKEN       # every request carries `Authorization: Bearer <its value>`
+  # behind_gateway: true                 # instead: a gateway in front checks who calls

@@ -43,10 +43,79 @@ def test_an_unknown_key_is_named(shop):
     assert found == ["repositories[0] (shop) → colour: an unknown key"]
 
 
-def test_groups_say_they_come_later(shop):
+def test_a_group_is_an_owner_and_a_pattern(tmp_path, monkeypatch):
+    monkeypatch.setenv("ACME_TOKEN", "made-up")
+    config = parse_config(
+        {
+            "repositories": [
+                {"github": "acme/shop-*", "skip": ["shop-sandbox"], "exclude": ["*.pem"], "description": "The shop."},
+                {"gitlab": "acme/backend/**/svc-*", "host": "git.example.com", "token_env": "ACME_TOKEN"},
+            ]
+        },
+        tmp_path,
+    )
+    github, gitlab = config.groups
+    assert (github.owner, github.pattern, github.host.api, github.label) == (
+        "acme",
+        "shop-*",
+        "https://api.github.com",
+        "github: acme/shop-*",
+    )
+    assert github.token_user == "x-access-token" and not github.subgroups
+    assert (gitlab.owner, gitlab.pattern, gitlab.subgroups) == ("acme/backend", "**/svc-*", True)
+    assert gitlab.host.api == "https://git.example.com/api/v4" and gitlab.token_user == "oauth2"
+    assert gitlab.label == "gitlab: acme/backend/**/svc-* on git.example.com"
+    assert config.repositories == []
+
+
+def test_what_a_group_takes_and_skips(tmp_path):
+    config = parse_config(
+        {
+            "repositories": [
+                {"github": "acme/shop-*", "skip": ["shop-sandbox", "acme/shop-*-legacy"]},
+                {"gitlab": "acme/backend/**"},
+                {"gitlab": "acme/backend/*"},
+            ]
+        },
+        tmp_path,
+    )
+    shop, deep, flat = config.groups
+    assert shop.takes("acme/shop-api") and shop.takes("Acme/Shop-Web")  # hosts ignore letters' case
+    assert not shop.takes("acme/billing") and not shop.takes("beta/shop-api")  # another owner, however it's spelt
+    assert shop.skips("acme/shop-sandbox") and shop.skips("acme/shop-old-legacy") and not shop.skips("acme/shop-api")
+    assert deep.takes("acme/backend/api") and deep.takes("acme/backend/team/api")
+    assert flat.takes("acme/backend/api") and not flat.takes("acme/backend/team/api")
+    assert deep.subgroups and not flat.subgroups  # GitLab is asked for subgroups' projects when the pattern reaches
+
+
+def test_a_wrong_group_is_named(tmp_path, monkeypatch):
+    monkeypatch.setenv("ACME_TOKEN", "made-up")
+    cases = [
+        ({"github": "acme/shop-*", "name": "shop"}, "a group takes none"),
+        ({"github": "acme/team/shop-*"}, "github: `acme/team/shop-*` is not an owner and a pattern of names"),
+        ({"github": "acme-*/shop"}, "names no owner"),
+        ({"gitlab": "acme//x"}, "is not an owner and a pattern"),
+        ({"github": "acme/shop-*", "skip": ["other/shop-x"]}, "skip[0]: `other/shop-x` is not a repository of `acme`"),
+        ({"github": "acme/*", "url": "https://example.com/a/b.git"}, "give one of `path`, `url`, `github`, `gitlab`"),
+        ({"url": "https://example.com/a/web.git", "skip": ["x"]}, "skip: it goes with a group"),
+        ({"github": "acme/*", "host": "http://git.example.com", "token_env": "ACME_TOKEN"}, "over https only"),
+        ({"github": "acme/*", "host": "ftp://git.example.com"}, "a host's address is https://"),
+        ({"github": "acme/*", "token_env": "UNSET_MADE_UP_TOKEN"}, "is not set in the server's environment"),
+        ({"github": "acme/*", "host": "https://git.example.com:abc"}, "has a port that is not a number"),
+        ({"github": "acme/*", "listed": False}, "`listed: false` would serve nothing"),
+    ]
+    for entry, says in cases:
+        found = problems({"repositories": [entry]}, tmp_path)
+        assert len(found) == 1 and says in found[0], (entry, found)
+
+
+def test_guidance_comes_from_a_repository_listed_one_by_one(shop, tmp_path):
     path, _ = shop
-    found = problems({"repositories": [{"github": "acme/shop-*"}]}, path.parent)
-    assert any("github" in p and "not supported yet" in p for p in found)
+    rules = {"name": "rules", "path": str(path)}
+    group = {"github": "acme/shop-*", "guidance": {"from": [{"repo": "rules"}]}}
+    assert parse_config({"repositories": [rules, group]}, tmp_path).groups[0].guidance.sources[0].repo == "rules"
+    found = problems({"repositories": [{**group, "guidance": {"from": [{"repo": "shop-api"}]}}]}, tmp_path)
+    assert "a group's repository can't be a source" in found[0]
 
 
 @pytest.mark.parametrize(
@@ -105,8 +174,8 @@ def test_remote_keys_belong_to_remote_repositories(shop, tmp_path, monkeypatch):
     monkeypatch.setenv("ACME_TOKEN", "made-up")
     cases = [
         ({"name": "shop", "path": str(path), "refs": ["main"]}, "refs: it is for a remote repository"),
-        ({"name": "shop", "path": str(path), "url": "https://example.com/a/shop.git"}, "not both"),
-        ({"name": "shop"}, "give either `path`"),
+        ({"name": "shop", "path": str(path), "url": "https://example.com/a/shop.git"}, "not `path` and `url`"),
+        ({"name": "shop"}, "give `path`"),
         ({"url": "ssh://git@example.com/a/web.git", "token_env": "ACME_TOKEN"}, "a token goes with an https url"),
         ({"url": "https://example.com/a/web.git", "token_user": "bot"}, "token_user: it goes with `token_env`"),
         ({"url": "https://example.com/"}, "none can be taken from its url"),

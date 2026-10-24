@@ -21,7 +21,6 @@ import os
 import shutil
 import tempfile
 import threading
-import time
 from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -410,7 +409,8 @@ class Mirror:
                     "at its next sync."
                 )
             return f"It is being mirrored from {url} for the first time — ask again in a minute."
-        line = f"Mirrored from {url}, synced {_when(status.synced)}"
+        group = f" (one of `{self.config.group}`)" if self.config.group else ""
+        line = f"Mirrored from {url}{group}, synced {_when(status.synced)}"
         if status.error:
             line += f"; the last sync failed ({_when(status.failed)}): {status.error}"
         return line + "."
@@ -427,22 +427,3 @@ def sync_all(mirrors: list[Mirror]) -> list[tuple[Mirror, str, bool]]:
 
     with ThreadPoolExecutor(max_workers=WORKERS, thread_name_prefix="repo-reader-sync") as pool:
         return list(pool.map(one, mirrors))
-
-
-def keep_fresh(mirrors: list[Mirror], every_minutes: int) -> threading.Thread:
-    """Sync every mirror now, then every `every_minutes` (only now, when 0) — in the background, logging to stderr."""
-
-    def loop() -> None:
-        while True:
-            for mirror, outcome, worked in sync_all(mirrors):
-                if worked:
-                    log.info("%s: %s", mirror.name, outcome)
-                else:
-                    log.warning("%s: the sync failed: %s", mirror.name, outcome)
-            if not every_minutes:
-                return
-            time.sleep(every_minutes * 60)
-
-    thread = threading.Thread(target=loop, name="repo-reader-sync", daemon=True)
-    thread.start()
-    return thread

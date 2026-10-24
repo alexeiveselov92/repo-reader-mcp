@@ -553,9 +553,10 @@ def test_a_tag_of_a_folder_or_of_a_file_s_contents_is_not_kept(served, tmp_path,
     assert mirror._served_at(mirror.git_dir, [folder]) == []
 
 
-def test_two_configurations_never_share_a_mirror(tmp_path):
+def test_two_configurations_never_share_a_mirror(tmp_path, monkeypatch):
     """Two servers on one machine (a shared cache folder), or one configuration changed, get mirrors of their own: a
-    mirror never holds branches or contents another configuration took."""
+    mirror never holds branches or contents another configuration took — or fetched with another token."""
+    monkeypatch.setenv("ACME_TOKEN", "made-up")
 
     def folder(**settings) -> str:
         return (
@@ -563,4 +564,5 @@ def test_two_configurations_never_share_a_mirror(tmp_path):
         )
 
     assert folder() == folder()
-    assert len({folder(), folder(refs=["main"]), folder(exclude=["secrets"]), folder(include=["src"])}) == 4
+    different = {folder(), folder(refs=["main"]), folder(exclude=["secrets"]), folder(include=["src"])}
+    assert len(different | {folder(token_env="ACME_TOKEN")}) == 5

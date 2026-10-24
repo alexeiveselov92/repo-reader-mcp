@@ -14,6 +14,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
+from .catalog import Catalog
 from .config import Config
 from .guidance import Guide, render, render_one
 from .paths import PathError, clean_path, under
@@ -88,17 +89,21 @@ def _counts(change: Change) -> str:
     return " ".join(part for part in parts if part)
 
 
-def register(server: MCPServer, config: Config) -> None:
-    """Add the reading tools over the configured repositories to a server."""
-    every = {repo.name: Repository(repo) for repo in config.repositories}
-    repositories = {name: repo for name, repo in every.items() if repo.config.listed}  # what agents may name
+def _on_host(repo: Repository, link: str | None) -> str:
+    """The line naming a host's own page for what an answer shows, when the repository has one."""
+    return f"On {repo.config.links.label}: {link}\n" if link and repo.config.links else ""
+
+
+def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
+    """Add the reading tools over the repositories served — the catalog's, as it stands at each call."""
     limit = config.limits.answer_characters
-    guide = Guide(config, every)
+    guide = Guide(config, catalog)
 
     def room() -> int:
         return BUDGET.get() or limit
 
     def repo_named(name: str) -> Repository:
+        repositories = catalog.listed()  # what agents may name
         if name in repositories:
             return repositories[name]
         known = ", ".join(sorted(repositories)) or "none are configured"
@@ -151,11 +156,15 @@ def register(server: MCPServer, config: Config) -> None:
         signature = inspect.signature(fn, eval_str=True)
 
         def wrapped(*args, **kwargs):
+            with catalog.pinned():  # one call reads one set of repositories, whatever a refresh does meanwhile
+                return answer(*args, **kwargs)
+
+        def answer(*args, **kwargs):
             arguments = signature.bind(*args, **kwargs).arguments
             name, path = arguments.get("repo"), arguments.get("path")
             try:
                 due = ""
-                if carries and name in repositories:
+                if carries and name in catalog.listed():
                     due = guide.due(name, path_of(path, allow_root=True) if path else None)[: limit // 2]
                 token = BUDGET.set(limit - len(due))
                 try:
@@ -181,6 +190,7 @@ def register(server: MCPServer, config: Config) -> None:
         """The repositories this server reads: each one's default branch and the commit it is at, its branches and
         tags, and what of it is served. Call it first; the other tools take a repository's name as `repo`."""
         answer = Answer(room())
+        repositories = catalog.listed()
         if not repositories:
             return "No repositories are configured on this server.\n"
         count = _plural(len(repositories), "repository", "repositories")
@@ -192,6 +202,8 @@ def register(server: MCPServer, config: Config) -> None:
                 answer.add(repo.config.description.strip())
             if repo.mirror is not None and repo.mirror.ready:
                 answer.add(repo.mirror.describe())
+            if repo.config.links:
+                answer.add(_on_host(repo, repo.config.links.base).rstrip())
             try:
                 at = repo.resolve(None)
             except ReadError as error:
@@ -277,21 +289,25 @@ def register(server: MCPServer, config: Config) -> None:
         entry = served_file(r, at, clean)
         data = r.blob(entry, FILE_BYTES)
         head = f"{r.name} · {clean} · {at.describe()}"
+        page = r.config.links.file(at.commit, clean) if r.config.links else None
         if data.cut:
             raise ToolError(f"`{clean}` is larger than {FILE_BYTES // (1024 * 1024)} MB — too large to read")
         if entry.is_link:
-            return f"{head}\n\nA symbolic link to `{data.text}` — not followed; read the target by its own path.\n"
+            return (
+                f"{head}\n{_on_host(r, page)}\nA symbolic link to `{data.text}` — not followed; read the target by "
+                "its own path.\n"
+            )
         if b"\0" in data.data[:BINARY_SNIFF]:
-            return f"{head}\n\nA binary file of {len(data.data)} bytes — not shown.\n"
+            return f"{head}\n{_on_host(r, page)}\nA binary file of {len(data.data)} bytes — not shown.\n"
         lines = _lines(data.data)
         total = len(lines)
         if total == 0:
-            return f"{head} · empty\n"
+            return f"{head} · empty\n{_on_host(r, page)}"
         if start_line > total:
             raise ToolError(f"`{clean}` has {_plural(total, 'line')} at {at.describe()}; start_line is past its end")
         last = total if max_lines is None else min(total, start_line + max_lines - 1)
         width = len(str(last))
-        body = Answer(room() - len(head) - 60)
+        body = Answer(room() - len(head) - len(page or "") - 80)
         shown_to = start_line - 1
         for number in range(start_line, last + 1):
             if not body.add(f"{number:>{width}}\t{_cut_line(lines[number - 1])}"):
@@ -304,7 +320,8 @@ def register(server: MCPServer, config: Config) -> None:
             more = "the answer is full" if body.full else "as asked"
             note = f"lines {shown_to + 1}–{total} not shown ({more}) — call read_file with start_line={shown_to + 1}"
         span = f"lines {start_line}–{shown_to} of {total}"
-        return f"{head} · {span}\n\n" + body.text(note)
+        page = r.config.links.file(at.commit, clean, start_line, shown_to) if r.config.links else None
+        return f"{head} · {span}\n{_on_host(r, page)}\n" + body.text(note)
 
     # --- list_files -----------------------------------------------------------------------------------------------
 
@@ -351,6 +368,8 @@ def register(server: MCPServer, config: Config) -> None:
             summary = f"{_plural(len(folders), 'folder')}, {_plural(len(files), 'file')}"
         answer = Answer(room())
         answer.add(f"{r.name} · {where} · {at.describe()} — {summary}")
+        if r.config.links:
+            answer.add(_on_host(r, r.config.links.folder(at.commit, folder)).rstrip())
         answer.add()
         shown = sum(1 for item in items if answer.add(item))
         note = None
@@ -484,6 +503,8 @@ def register(server: MCPServer, config: Config) -> None:
         info = r.commit(at)
         answer = Answer(room())
         answer.add(f"{r.name} · commit {info.commit[:12]}")
+        if r.config.links:
+            answer.add(_on_host(r, r.config.links.commit(info.commit)).rstrip())
         answer.add(f"Author: {info.author}, {info.author_date}")
         if (info.committer, info.committer_date) != (info.author, info.author_date):
             answer.add(f"Committed by: {info.committer}, {info.committer_date}")
@@ -529,6 +550,9 @@ def register(server: MCPServer, config: Config) -> None:
             start = fork
             line += f" · from their merge base {fork[:12]}"
         answer.add(line)
+        compare = r.config.links.compare(start, at_head.commit) if r.config.links else None
+        if compare:
+            answer.add(_on_host(r, compare).rstrip())
         answer.add()
         return changes_answer(r, answer, start, at_head.commit, clean, files_only)
 
@@ -562,6 +586,7 @@ def register(server: MCPServer, config: Config) -> None:
         lines, commits, stopped = r.blame(at, clean, start_line, last)
         width = len(str(last))
         head = f"{r.name} · blame {clean} · {at.describe()}"
+        page = r.config.links.file(at.commit, clean, start_line, last) if r.config.links else None
         stop = ""
         if stopped:
             stop = (
@@ -569,7 +594,7 @@ def register(server: MCPServer, config: Config) -> None:
                 "further needs the contents of the files that commit deleted, which this mirror doesn't hold. Lines "
                 "shown at that commit are as old as it, or older — show_commit and log tell the rest.)\n"
             )
-        body = Answer(room() - len(head) - len(stop) - 60)
+        body = Answer(room() - len(head) - len(stop) - len(page or "") - 80)
         shown_to = start_line - 1
         current = None
         for line in lines:
@@ -589,7 +614,9 @@ def register(server: MCPServer, config: Config) -> None:
         if shown_to < total:
             more = "the answer is full" if body.full else "as asked" if max_lines else "a window at a time"
             note = f"lines {shown_to + 1}–{total} not shown ({more}) — call blame with start_line={shown_to + 1}"
-        return f"{head} · lines {start_line}–{shown_to} of {total}\n{stop}\n" + body.text(note)
+        if r.config.links:
+            page = r.config.links.file(at.commit, clean, start_line, shown_to)
+        return f"{head} · lines {start_line}–{shown_to} of {total}\n{_on_host(r, page)}{stop}\n" + body.text(note)
 
     # --- read_guidance --------------------------------------------------------------------------------------------
 

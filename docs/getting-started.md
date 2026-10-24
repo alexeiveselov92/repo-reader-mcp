@@ -68,3 +68,9 @@ claude mcp add repo-reader -- uv --directory /path/to/repo-reader-mcp run repo-r
 - *"Who wrote the retry logic in `src/payments/client.py`, and why?"*
 
 The agent calls the [tools](reference/tools.md); every answer names the commit it was read at.
+
+## For a team
+
+One server on a shared machine can serve everyone's agents over HTTP, behind a token — and a whole group of
+repositories can be named by a pattern (`github: acme/shop-*`) instead of one by one: [running it for a
+team](serving-over-http.md), [groups](remote-repositories.md#groups).

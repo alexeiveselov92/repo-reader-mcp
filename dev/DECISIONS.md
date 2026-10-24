@@ -162,3 +162,48 @@ left no default branch; a token over plain http and a URL with a query were acce
 files-only diff on a mirror fetches the changed files' contents to count lines; fetches made for reading don't repack,
 so packs pile up between syncs that move nothing.
 
+
+## 2026-10-24 · Groups: listed by the host's API, addresses built by the server, archived ones leave
+
+**Decision** (made while building, within the author's requirement). A group is listed by the host's API before every
+sync. A member is named by its repository's own name (not `owner/name`): agents name repositories that way, and a
+company's names are unique within its owner. A name already taken — by a repository listed one by one, or an earlier
+group's member — keeps its first owner and the later one is left out, logged: listing a repository one by one is how a
+member gets settings of its own. Archived repositories leave (as the author decided); forks stay (they are the owner's;
+`skip` takes them out). Git addresses are built from the configured host and the listed path, never taken from the
+listing; no redirect is followed and a next page must stay on the API — the token travels with these requests. The last
+listing is kept on disk, so a restart serves at once and a host that can't be reached changes nothing. A group's
+repository can't be a guidance source: a source should not come and go with a listing.
+
+**Waiting for the author**: whether forks should be left out by default, and whether two members with the same name in
+different GitLab subgroups should get longer names rather than the second being left out.
+
+## 2026-10-24 · A mirror's digest includes the token's variable
+
+**Decision** (made while building). A mirror's folder digest now covers the variable `token_env` names, beside the URL,
+`refs`, `include` and `exclude`: a configuration without a token (or with another) must not serve what was fetched with
+a token. Changing the variable refetches.
+
+## 2026-10-24 · Streamable HTTP: stateless, JSON answers, a bearer token or a gateway
+
+**Decision** (made while building). `--http [HOST:]PORT` serves at `/mcp` with no session kept and plain JSON answers —
+what the protocol's newer revision expects, what gateways pass through, and what lets the server restart or run as
+copies unseen. One bearer token, named by its variable (`http.token_env`), or `http.behind_gateway: true`; a non-loopback
+address with neither is refused at start. The listening address is a command-line flag (where a deployment says it),
+who may call is in the configuration. Per-person tokens and access per repository are later, with the author's server
+instance (milestone 5).
+
+## 2026-10-24 · The second refuting review's findings (groups and HTTP; all closed, each with a test)
+
+An answer that wasn't HTTP (a broken status line echoing the token) or JSON nested too deep escaped as an exception: it
+ended the background sync for good and printed the token — now every failure of a listing is a scrubbed listing error,
+and a round that fails never ends the loop. Loopback addresses other than `127.0.0.1`, `localhost`, `::1` served with no
+token and without the SDK's DNS-rebinding guard — now only those three serve open. A reverse proxy on the same machine
+got 421 for its host name — with a token or a gateway, any host name is answered. `gitlab: group/**` didn't ask for
+subgroups. A repository listed one by one and caught by a group was served twice, the copy ignoring the first entry's
+exclude — now served once. A token over http to this machine went through the environment's proxy. A host's port
+wasn't checked. A page sent a byte at a time held the listing — a page now has 60 seconds. A refresh landing in the
+middle of a tool call broke it — a call now reads one set. A members file written by anything else was trusted — it is
+checked again on load. A next page could hold `..`, and a host spelt differently in a next page was refused. A group
+with `listed: false` served nothing — refused. Noted, not changed: two servers sharing a mirrors folder whose token
+variables share a name but hold different tokens share mirrors (the docs say to give them different folders).
