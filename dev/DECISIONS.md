@@ -320,3 +320,9 @@ segments, JSON-RPC posted to it, upgrades): none reached the MCP app. Its findin
    publish reuses their cached layers, and the published image is tried after the push.
 9. The ssh advice was stricter than ssh (a Secret mounted `0440` with `fsGroup` works) and `--user` breaks ssh — both
    said.
+
+## 2026-10-25 · A release: main first, the tag once CI is green
+
+**Decision** (the author chose). A version goes to `main` first and waits for every workflow — the tests, the site,
+the image on both platforms; only then is the tag `v<version>` pushed, which publishes the package and the image. A tag
+pushed with untried changes could put a version on PyPI (a number never reusable) with no image beside it.

@@ -60,8 +60,9 @@ with something visible: a real agent answering through the server.
 
 - [x] A container image of the server on GHCR (`ghcr.io/alexeiveselov92/repo-reader-mcp`), built by CI on every push:
       the configuration and the mirrors' folder mounted, secrets by environment; a health endpoint for a gateway or an
-      orchestrator; the guide's page on running it in a container and behind an MCP gateway. — 2026-10-24: built,
-      run read-only against a real https mirror and a mounted repository, published with 0.2.0.
+      orchestrator; the guide's page on running it in a container and behind an MCP gateway. — ✅ 2026-10-24: run
+      read-only against a real https mirror and a mounted repository; published with 0.2.0 (amd64, arm64), the
+      published image tried by CI on both.
 - [ ] Proved by a company applying it in its own repositories — its configuration, guidance and deployment kept
       there, never here. What it needs that the server lacks comes back as general requirements, shown with made-up
       examples. (pipelab hosts the docs site only, not an instance.)
@@ -70,7 +71,9 @@ with something visible: a real agent answering through the server.
 
 - [x] Published on PyPI (`uvx repo-reader-mcp`): 0.1.0, 2026-10-24 — moved ahead at the author's word; the
       `publish` workflow releases a tag `v*` by trusted publishing.
-- [ ] A container image (milestone 6), docs for agents and for people who run it; the next versioned releases.
+- [x] 0.2.0, 2026-10-24: on PyPI and as the image on GHCR (public) — `guidance.own` patterns, `/health`, the fixes
+      since 0.1.0.
+- [ ] Docs for agents and for people who run it, completed by what the first deployment teaches; the next versions.
 
 ## Later
 
