@@ -270,3 +270,15 @@ developing it (branches, pull requests, releases, reviews, a ticket tracker) —
 server may do another (analysing what the code does). All or nothing loses either the knowledge (architecture, how
 events are sent) or the agent's attention (measured on a real client repository: 53 own files, ~90k tokens, the first
 ones a coding agent's process rules). The operator picks; the server's own text can say which job applies.
+
+## 2026-10-24 · An installation lives in its company's repositories; pipelab hosts the docs site only
+
+**Decision** (the author). The server's instance for a company — its configuration, guidance, checks, deployment behind
+its MCP gateway — lives in that company's own repository; nothing of it here. The author's pipelab serves the docs site
+alone. Milestone 6 (a container image, a health endpoint, the guide's page on running behind a gateway) is proved by
+such an installation; what it needs comes back here as general requirements with made-up examples.
+
+## 2026-10-24 · The docs site at rrm.pipelab.dev
+
+**Decision** (the author chose). Short and without a hyphen, as the author's other projects (`dtk`, `swm`). The first
+address, `repo-reader.pipelab.dev`, answers `301` to it keeping the path — 0.1.0's PyPI metadata points there.
