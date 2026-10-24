@@ -215,3 +215,25 @@ async def test_a_source_s_own_include_and_exclude_hold_for_what_it_gives(repos):
     text, _ = await ask(parse_config(data, repos), "read_guidance", repo="shop")
     assert "Promo engine" in text  # served by the source
     assert "net of tax" not in text and "Basket" not in text  # kept out by the source's exclude
+
+
+async def test_own_can_take_some_of_a_repository_s_own_files(repos):
+    """A repository's guidance written for another purpose (developing it, say) is taken in part: the files the
+    patterns name, and no other."""
+    config = configure(repos, guidance={"own": [".claude/rules/style.md", ".claude/skills/**"]})
+    text, _ = await ask(config, "read_guidance", repo="shop")
+    assert "Name modules in the singular." in text and "skill refund-flow" in text
+    assert "always answer them in euros" not in text and "TAX_RATE is set by finance" not in text
+    assert "Be brief." in text  # the server's own guidance stays
+    found = problems_of({"own": []}, repos)
+    assert "give `own` patterns" in found[0]
+
+
+def problems_of(guidance, base):
+    from repo_reader_mcp.config import ConfigError
+
+    try:
+        configure(base, guidance=guidance)
+    except ConfigError as error:
+        return error.problems
+    return []

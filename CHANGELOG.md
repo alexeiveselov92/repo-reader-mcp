@@ -4,6 +4,7 @@ One line per change, newest on top: `YYYY-MM-DD — what was done`.
 
 ---
 
+2026-10-24 — `guidance.own` takes patterns: some of a repository's own guidance files, and no other — for guidance written for another job (developers' process) than the one agents do through the server
 2026-10-24 — the docs site moved to https://rrm.pipelab.dev (short, like swm and dtk); the old repo-reader.pipelab.dev answers 301 there, keeping the path — 0.1.0's PyPI metadata points at it
 2026-10-24 — the site's landing page on the pattern of detectkit's: a hero with a real agent-and-server exchange, sections showing what the tools actually print (history, search, mirrors and groups, safety, guidance, clients), "what it is — and isn't"; light and dark; made-up data only; milestone 5 done
 2026-10-24 — 0.1.0, the first release: the package on PyPI (`uvx repo-reader-mcp`, `pip install repo-reader-mcp`), published by trusted publishing from the `publish` workflow on a tag `v*` (tests run first, the tag must name the version); the guide installs it with `uvx`; README links absolute for PyPI

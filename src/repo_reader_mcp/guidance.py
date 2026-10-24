@@ -146,12 +146,17 @@ def found_in(repo: Repository, at: At, folder: str = "", *, everything: bool = F
     return out
 
 
-def from_repository(repo: Repository, folder: str = "", *, origin: str | None = None) -> list[Doc]:
-    """The guidance a repository's convention files give — its own (`origin` None), or a `from` folder's."""
+def from_repository(
+    repo: Repository, folder: str = "", *, origin: str | None = None, only: Matcher | None = None
+) -> list[Doc]:
+    """The guidance a repository's convention files give — its own (`origin` None), or a `from` folder's; with `only`,
+    the files its patterns take, and no other."""
     at = repo.resolve(None)
     where = f"{repo.name} @ {at.label} {at.short}"
     docs = []
     for entry, relative in found_in(repo, at, folder):
+        if only is not None and not only.allows(entry.path):
+            continue
         name = relative if origin is None else f"{origin}:{entry.path}"
         doc = _doc(name, where, relative, _read(repo, entry))
         if doc is not None:
@@ -188,8 +193,9 @@ def gather(config: RepositoryConfig, server_docs: list[TextDoc], repositories: d
             docs += from_files(repo, source)
         else:
             docs += from_repository(repo, source.path.strip("/"), origin=repo.name)
-    if config.guidance.own:
-        docs += from_repository(repositories[config.name])
+    own = config.guidance.own
+    if own:
+        docs += from_repository(repositories[config.name], only=None if own is True else Matcher(include=own))
     seen: set[str] = set()
     kept = []
     for doc in docs:

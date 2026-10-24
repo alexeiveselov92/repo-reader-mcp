@@ -261,3 +261,12 @@ repository walk whole trees in list_files and whole histories in log — both us
 exclude are set. A command line too long crashed search for every repository — batches by size, and a failure to start
 git is git's error. Hiding could push an answer past its limit — cut. Fewer false positives (prose, addresses,
 `tokenizer:`), more credential names.
+
+## 2026-10-24 · A repository's own guidance can be taken in part (the author's question)
+
+**Decision** (the author agreed). `guidance.own` takes patterns as well as `true` / `false`: the repository's own
+guidance files those patterns take, and no other. A repository's rules are written for the job its owners do — often
+developing it (branches, pull requests, releases, reviews, a ticket tracker) — while the agents reading it through this
+server may do another (analysing what the code does). All or nothing loses either the knowledge (architecture, how
+events are sent) or the agent's attention (measured on a real client repository: 53 own files, ~90k tokens, the first
+ones a coding agent's process rules). The operator picks; the server's own text can say which job applies.

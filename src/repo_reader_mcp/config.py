@@ -80,7 +80,16 @@ class ServerGuidanceSettings(_Strict):
 
 class GuidanceSettings(ServerGuidanceSettings):
     sources: list[GuidanceSource] = Field(default_factory=list, alias="from")
-    own: bool = True
+    own: bool | list[str] = True  # the repository's own guidance files: all, none, or those these patterns take
+
+    @field_validator("own")
+    @classmethod
+    def _own(cls, own: bool | list[str]) -> bool | list[str]:
+        if isinstance(own, list):
+            if not own:
+                raise ValueError("give `own` patterns of the repository's guidance files to take — or true, or false")
+            _check_patterns(own)
+        return own
 
 
 def url_protocol(url: str) -> str:
@@ -241,7 +250,7 @@ class TextDoc:
 class RepositoryGuidance:
     docs: list[TextDoc] = field(default_factory=list)
     sources: list[GuidanceSource] = field(default_factory=list)
-    own: bool = True
+    own: bool | tuple[str, ...] = True  # all of the repository's own guidance files, none, or those patterns take
 
 
 @dataclass(frozen=True)
@@ -440,6 +449,10 @@ def _schema_problems(error: ValidationError, data: Any) -> list[str]:
     return problems
 
 
+def _own(own: bool | list[str]) -> bool | tuple[str, ...]:
+    return tuple(own) if isinstance(own, list) else own
+
+
 def _token_problem(repo: RepositorySettings, protocol: str, hostname: str | None) -> str | None:
     """What is wrong with an entry's token settings, if anything — for a URL's or a host's protocol."""
     if repo.token_env and protocol not in ("http", "https"):
@@ -483,7 +496,9 @@ def _group(repo: RepositorySettings, where: str, base: Path, problems: list[str]
         if "/" in item.strip("/") and not item.strip("/").lower().startswith(owner.lower() + "/"):
             problems.append(f"{where} → skip[{j}]: `{item}` is not a repository of `{owner}`")
     guidance = RepositoryGuidance(
-        _text_docs(repo.guidance, base, f"{where} → guidance", problems), repo.guidance.sources, repo.guidance.own
+        _text_docs(repo.guidance, base, f"{where} → guidance", problems),
+        repo.guidance.sources,
+        _own(repo.guidance.own),
     )
     return Group(
         kind,
@@ -617,7 +632,9 @@ def parse_config(data: Any, base: Path, source: str = "") -> Config:
                 other = "itself" if origin.repo == name else f"`{origin.repo}`, which is not configured"
                 problems.append(f"{where} → guidance → from[{j}] → repo: names {other}")
         guidance = RepositoryGuidance(
-            _text_docs(repo.guidance, base, f"{where} → guidance", problems), repo.guidance.sources, repo.guidance.own
+            _text_docs(repo.guidance, base, f"{where} → guidance", problems),
+            repo.guidance.sources,
+            _own(repo.guidance.own),
         )
         matcher = Matcher(repo.include, repo.exclude, credentials=not repo.serve_credential_files)
         links = links_for(repo.url, repo.links) if repo.url else None

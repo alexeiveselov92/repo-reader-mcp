@@ -53,7 +53,7 @@ repositories:
         - repo: acme-rules
           path: handbook
           files: ["*.md"]              # exactly these files, in force for the whole repository
-      own: true                        # the repository's own guidance files (the default); false to ignore them
+      own: true                        # the repository's own guidance files (the default); false: none; or patterns
 ```
 
 - **`from`** names another configured repository and a folder of it. Without `files`, the folder is read by the
@@ -63,6 +63,16 @@ repositories:
 - **`listed: false`** keeps a repository out of `list_repos` and out of every tool — it is only read as a source.
 - **`own: false`** — for a repository whose contributors you don't trust to instruct agents: its own files are ignored,
   and only what the configuration gives is delivered.
+- **`own: [patterns]`** — some of its own files, those the patterns take (as `include` reads them), and no other. For a
+  repository whose guidance was written for another job than the one agents do through this server — developers' rules
+  on branches, pull requests and releases, when the agents here read the code to analyse what it does — take what
+  describes the code and leave the process:
+
+  ```yaml
+  guidance:
+    own: [CLAUDE.md, ".claude/rules/architecture-*.md", ".claude/rules/analytics-*.md", ".claude/skills/data-layer/**"]
+    text: You answer questions about what the code does; its developers' process rules don't apply here.
+  ```
 
 The order an agent reads: the server's `guidance`, the repository's `guidance` text and files, its `from` sources, then
 its own files.
