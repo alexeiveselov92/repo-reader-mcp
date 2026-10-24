@@ -33,14 +33,14 @@ with something visible: a real agent answering through the server.
 - [x] Hosts (2026-10-24): GitHub, GitLab, any git server — links to the host's pages where it has them.
 - [x] Streamable HTTP with a bearer token; a second MCP client checked (not Claude) (2026-10-24: the MCP Inspector).
 
-## Milestone 3. The docs site — 1 session
+## Milestone 3. The docs site — ✅ 2026-10-24
 
 - [x] `website/` (2026-10-24) — Astro + Starlight built from `docs/`, the author's detectkit pattern (`../detectkit/website`: the
       `sync-docs` script importing `docs/`, the nginx Dockerfile, the `website.yml` workflow pushing the image to GHCR and
       sending `repository_dispatch` to pipelab).
-- [ ] In pipelab (`../pipelab`, under its own rules): the site at `repo-reader.pipelab.dev` — a compose service
+- [x] In pipelab (`../pipelab`, under its own rules; 2026-10-24): the site at `repo-reader.pipelab.dev` — a compose service
       behind Traefik and its `deploy-*.yml`, as detectkit's site is served.
-- [ ] The guide as it stands after milestone 2 published there; from now on every milestone's pages go live with it.
+- [x] The guide as it stands after milestone 2 published there (2026-10-24, https://repo-reader.pipelab.dev); from now on every milestone's pages go live with it.
 
 ## Milestone 4. Search and safety — 2 sessions
 

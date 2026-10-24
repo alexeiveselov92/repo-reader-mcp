@@ -4,6 +4,8 @@ One line per change, newest on top: `YYYY-MM-DD — what was done`.
 
 ---
 
+2026-10-24 — the docs site is live at https://repo-reader.pipelab.dev (pipelab's `repo-reader-web`), redeployed on every push to main; milestone 3 done
+2026-10-24 — missing contents of a partial clone recognised as newer git (2.44+, CI's) reports them
 2026-10-24 — the docs site: `website/` (Astro + Starlight) built from `docs/` and the changelog — every page of the guide on it, held by a test; an nginx image pushed to GHCR by the `website` workflow, which asks pipelab to redeploy
 2026-10-24 — groups leave forks out unless `forks: true`; two repositories of a group sharing a name (GitLab's subgroups) are both served, named by their path below the owner
 2026-10-24 — groups of repositories (`github: owner/pattern`, `gitlab: group/**/pattern`, `skip`, `host`) listed by the host's API before every sync — new ones join, archived ones leave, the last listing kept on disk; Streamable HTTP (`--http`, stateless, JSON answers) behind a bearer token or a gateway; links to the host's pages in answers (GitHub, GitLab, Bitbucket, `links:`); a second refuting review's 10 findings closed; 236 tests, 59 protections each failing its test when removed; real Claude Code and the MCP Inspector answering over HTTP through an 18-repository public GitHub group; the guide's groups section and team page; milestone 2 done

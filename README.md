@@ -36,7 +36,8 @@ whole team.
 
 One YAML file names the repositories and what to take from them; secrets are named, never written in it.
 An example is in [examples/config.example.yaml](examples/config.example.yaml); every key is in
-[docs/reference/configuration.md](docs/reference/configuration.md). The documentation starts at [docs/](docs/README.md).
+[docs/reference/configuration.md](docs/reference/configuration.md). The documentation is at
+**[repo-reader.pipelab.dev](https://repo-reader.pipelab.dev)**, built from [docs/](docs/README.md).
 
 ## Development
 
