@@ -174,6 +174,57 @@ On a [mirror](../remote-repositories.md#reading-an-older-commit), blame follows 
 repository does, fetching what git compares; where a file was renamed with changes beside a deleted file that is not
 served, blame stops at that commit and the answer says so — lines shown there are as old as it, or older.
 
+## `search`
+
+Text across repositories at once, on each one's default branch: every matching line with its repository, file and
+line number — at most 5 lines a file, so an answer surveys many files. Binary files are skipped; a file include /
+exclude keep out is never searched (git is given the served files by name, and no other). A repository that carries
+[guidance](guidance.md) says so in its heading.
+
+| Input | |
+|---|---|
+| `pattern` | The text to find; with `regex`, a POSIX extended regular expression. One line. |
+| `repos` | Only these repositories, by name. Default: every one `list_repos` shows. |
+| `path` | Only under this folder, or in this file, of each repository. |
+| `regex` | `true`: `pattern` is a regular expression. Default: plain text. |
+| `ignore_case` | `true`: letters' case aside. |
+
+```
+`currency` in 2 repositories (their default branches): 2 lines in 2 files of 2 repositories — at most 5 lines a file.
+
+## shop · main @ 14a4c0422ae3 (2026-03-01)
+config/settings.yml
+  1: currency: EUR
+```
+
+Search reads the repositories as they are — no index to build or wait for. To read around a match, call `read_file` with
+its `start_line`; to search one repository at another ref, or with lines of context, use `grep`.
+
+## `grep`
+
+Text in one repository at any branch, tag or commit: every matching line with its file and line number (`12:`), and
+lines of context around it (`11-`; `--` where lines are skipped). Up to 100 matches a file.
+
+| Input | |
+|---|---|
+| `repo`, `ref` | As for every reading tool. |
+| `pattern` | The text to find; with `regex`, a POSIX extended regular expression. One line. |
+| `path` | Only under this folder, or in this file. A path outside include / exclude is refused, as everywhere. |
+| `regex`, `ignore_case` | As for `search`. |
+| `context` | Lines shown before and after each match, 0 to 10. Default 0. |
+| `files_only` | `true`: only the files that match. |
+
+```
+shop · grep `mode = classic` · v0.2 @ 512ed7a49e1d (2026-02-20) — 1 matching line in 1 file
+
+config/legacy.ini
+  1- [old]
+  2: mode = classic
+```
+
+On a [mirror](../remote-repositories.md), grep at an older commit first fetches the contents of the served files it
+searches, as reading an older file does.
+
 ## `read_guidance`
 
 The [guidance](guidance.md) a repository carries for agents — written by its owners (`AGENTS.md`, `CLAUDE.md`, rules,

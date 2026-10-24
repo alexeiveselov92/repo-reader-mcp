@@ -161,8 +161,8 @@ repositories:
 | `diff` | between two refs, or since their merge base, for a path or the whole tree (capped) (milestone 1) |
 | `blame` | who last changed each line of a file, at a ref, grouped by commit (milestone 1) |
 | `read_guidance` | a repository's guidance for agents, or one skill (planned) |
-| `search` | text or a regular expression across repositories (or some), with paths and line numbers |
-| `grep` | `rg`, `find`, `ls`, `cat` in one repository at a ref — reading flags only |
+| `search` | text or a regular expression across repositories (or some), on each default branch, with paths and line numbers — `git grep` per repository, eight at once, given the served files by name (built 2026-10-24) |
+| `grep` | text or a regular expression in one repository at any ref, with lines of context or files only — `git grep` the same way (built 2026-10-24) |
 
 Every answer names the repository, the ref and the commit it was read at, and a link to the host's page
 when the host has pages.

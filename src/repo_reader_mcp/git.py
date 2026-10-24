@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 # The commands the server may run; each only reads.
 COMMANDS = frozenset(
-    {"rev-parse", "symbolic-ref", "for-each-ref", "ls-tree", "cat-file", "log", "diff", "blame", "merge-base"}
+    {"rev-parse", "symbolic-ref", "for-each-ref", "ls-tree", "cat-file", "log", "diff", "blame", "merge-base", "grep"}
 )
 
 # The commands the sync runs on a mirror it keeps: making it, asking the host what it has, fetching, moving its refs —

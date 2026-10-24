@@ -4,6 +4,7 @@ One line per change, newest on top: `YYYY-MM-DD — what was done`.
 
 ---
 
+2026-10-24 — `search` across repositories (default branches) and `grep` in one at any ref, with context or files only: `git grep` given the served files by name, so nothing include / exclude keep out is ever searched; 0.2–0.4 s over 18 real repositories; real Claude Code answered a cross-repository question with it
 2026-10-24 — the docs site is live at https://repo-reader.pipelab.dev (pipelab's `repo-reader-web`), redeployed on every push to main; milestone 3 done
 2026-10-24 — missing contents of a partial clone recognised as newer git (2.44+, CI's) reports them
 2026-10-24 — the docs site: `website/` (Astro + Starlight) built from `docs/` and the changelog — every page of the guide on it, held by a test; an nginx image pushed to GHCR by the `website` workflow, which asks pipelab to redeploy

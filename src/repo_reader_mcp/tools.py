@@ -5,6 +5,7 @@ commit it was read at, sized to `limits.answer_characters`; a cut answer says so
 from __future__ import annotations
 
 import inspect
+from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from fnmatch import fnmatchcase
 from typing import Annotated, Literal
@@ -18,7 +19,7 @@ from .catalog import Catalog
 from .config import Config
 from .guidance import Guide, render, render_one
 from .paths import PathError, clean_path, under
-from .repository import BATCH, At, Change, Entry, ReadError, Repository
+from .repository import BATCH, At, Change, Entry, Hit, ReadError, Repository
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False)
 
@@ -27,6 +28,11 @@ BINARY_SNIFF = 8000  # a NUL byte in the first this-many bytes marks a file bina
 LINE_CHARACTERS = 2000  # a longer line is cut, saying how much
 NOTE_RESERVE = 400  # kept free in every answer for the closing note
 BLAME_LINES = 5000  # the most lines one blame call works on
+SEARCH_PER_FILE = 5  # lines a file shows in search, which surveys many repositories
+SEARCH_LINE = 300  # a longer line in search is cut
+SEARCH_BYTES = 1024 * 1024  # git grep's output read per repository in search
+SEARCH_WORKERS = 8  # repositories searched at once
+GREP_PER_FILE = 100  # matches a file shows in grep
 
 # What is left of the answer limit for a tool's own answer, once guidance due with it took its share (at most half).
 BUDGET: ContextVar[int | None] = ContextVar("budget", default=None)
@@ -65,10 +71,10 @@ class Answer:
         return "\n".join(self.lines + ([f"\n[{note}]"] if note else [])).rstrip("\n") + "\n"
 
 
-def _cut_line(line: str) -> str:
-    if len(line) <= LINE_CHARACTERS:
+def _cut_line(line: str, limit: int = LINE_CHARACTERS) -> str:
+    if len(line) <= limit:
         return line
-    return f"{line[:LINE_CHARACTERS]} …[{len(line) - LINE_CHARACTERS} more characters]"
+    return f"{line[:limit]} …[{len(line) - limit} more characters]"
 
 
 def _lines(data: bytes) -> list[str]:
@@ -617,6 +623,168 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
         if r.config.links:
             page = r.config.links.file(at.commit, clean, start_line, shown_to)
         return f"{head} · lines {start_line}–{shown_to} of {total}\n{_on_host(r, page)}{stop}\n" + body.text(note)
+
+    # --- search and grep ------------------------------------------------------------------------------------------
+
+    def pattern_of(pattern: str) -> str:
+        if not pattern or any(ord(ch) < 32 and ch != "\t" for ch in pattern) or "\x7f" in pattern:
+            raise ToolError("a pattern is one line of text: not empty, with no line break or control character")
+        return pattern
+
+    @tool
+    def search(
+        pattern: Annotated[str, Field(description="The text to find — or a regular expression, with regex=true.")],
+        repos: Annotated[
+            list[str] | None, Field(description="Only these repositories, by name. Default: every one.")
+        ] = None,
+        path: Annotated[str | None, Field(description="Only under this folder (or in this file) of each.")] = None,
+        regex: Annotated[bool, Field(description="`pattern` is a regular expression (POSIX extended).")] = False,
+        ignore_case: Annotated[bool, Field(description="Letters' case aside.")] = False,
+    ) -> str:
+        """Find text across repositories at once — on each one's default branch: every matching line with its
+        repository, file and line number (a few lines a file). Narrow with `repos` or `path`; search one repository
+        at another ref, with lines around each match, with grep."""
+        text = pattern_of(pattern)
+        every = catalog.listed()
+        if repos:
+            unknown = [name for name in repos if name not in every]
+            if unknown:
+                known = ", ".join(sorted(every)) or "none are configured"
+                raise ToolError(f"no repository named {', '.join(f'`{n}`' for n in unknown)} — known: {known}")
+            chosen = [every[name] for name in dict.fromkeys(repos)]
+        else:
+            chosen = list(every.values())
+        if not chosen:
+            return "No repositories are configured on this server.\n"
+        clean = path_of(path, allow_root=True) if path else ""
+
+        def one(r: Repository) -> tuple[Repository, At | None, list[Hit], bool, str | None]:
+            try:
+                at = r.resolve(None)
+                files, tree_cut = r.served(at)
+                files = [e for e in files if under(e.path, clean)]
+                hits, cut = r.grep(
+                    at, text, files, regex=regex, ignore_case=ignore_case, per_file=SEARCH_PER_FILE, limit=SEARCH_BYTES
+                )
+                return r, at, hits, cut or tree_cut, None
+            except ReadError as error:
+                return r, None, [], False, str(error)
+
+        with ThreadPoolExecutor(max_workers=SEARCH_WORKERS, thread_name_prefix="repo-reader-search") as pool:
+            results = list(pool.map(one, chosen))
+        wrong = next((e for *_, e in results if e and e.startswith(f"`{text}` is not a regular expression")), None)
+        if wrong:
+            raise ToolError(wrong)
+        found = [(r, at, hits, cut) for r, at, hits, cut, _ in results if hits]
+        lines = sum(len(hits) for _, _, hits, _ in found)
+        files = sum(len({h.path for h in hits}) for _, _, hits, _ in found)
+        scope_text = f" under {clean}" if clean else ""
+        answer = Answer(room())
+        head = (
+            f"`{text}`{scope_text} in {_plural(len(chosen), 'repository', 'repositories')} (their default branches): "
+        )
+        if found:
+            many = _plural(len(found), "repository", "repositories")
+            head += f"{_plural(lines, 'line')} in {_plural(files, 'file')} of {many}"
+            head += f" — at most {SEARCH_PER_FILE} lines a file."
+        else:
+            head += "no line matches."
+        answer.add(head)
+        for r, _, _, _, error in results:
+            if error:
+                answer.add(f"({r.name} was not searched: {error})")
+        for r, at, hits, cut in found:
+            answer.add()
+            title = f"## {r.name} · {at.describe()}"
+            if guide.of(r.name).docs:
+                title += f' — carries guidance for agents: read_guidance(repo="{r.name}")'
+            if not answer.add(title):
+                break
+            current = None
+            for hit in hits:
+                if hit.path != current and not answer.add(hit.path):
+                    break
+                current = hit.path
+                if not answer.add(f"  {hit.number}: {_cut_line(hit.text, SEARCH_LINE)}"):
+                    break
+            if cut:
+                answer.add(f"  (more of {r.name} than the server reads at once — narrow with `path`, or grep it)")
+            if answer.full:
+                break
+        return answer.text(
+            "cut: more matches than fit — narrow with `repos`, `path` or the pattern" if answer.full else None
+        )
+
+    @tool
+    def grep(
+        repo: RepoName,
+        pattern: Annotated[str, Field(description="The text to find — or a regular expression, with regex=true.")],
+        ref: RefArg = None,
+        path: Annotated[str | None, Field(description="Only under this folder, or in this file.")] = None,
+        regex: Annotated[bool, Field(description="`pattern` is a regular expression (POSIX extended).")] = False,
+        ignore_case: Annotated[bool, Field(description="Letters' case aside.")] = False,
+        context: Annotated[int, Field(ge=0, le=10, description="Lines shown before and after each match.")] = 0,
+        files_only: Annotated[bool, Field(description="Only the files that match, no lines.")] = False,
+    ) -> str:
+        """Find text in one repository at any branch, tag or commit: every matching line with its file and line
+        number, and `context` lines around it; `files_only` lists the files that match."""
+        r = repo_named(repo)
+        text = pattern_of(pattern)
+        at = r.resolve(ref)
+        clean = scope(r, at, path) or ""
+        files, tree_cut = r.served(at)
+        files = [e for e in files if under(e.path, clean)]
+        hits, cut = r.grep(
+            at,
+            text,
+            files,
+            regex=regex,
+            ignore_case=ignore_case,
+            context=0 if files_only else context,
+            per_file=1 if files_only else GREP_PER_FILE,
+        )
+        matches = [h for h in hits if h.match]
+        paths = list(dict.fromkeys(h.path for h in matches))
+        where = f" under {clean}" if clean else ""
+        answer = Answer(room())
+        if files_only:
+            answer.add(f"{r.name} · grep `{text}`{where} · {at.describe()} — {_plural(len(paths), 'file')} match")
+            answer.add()
+            for each in paths:
+                if not answer.add(each):
+                    break
+        else:
+            summary = (
+                f"{_plural(len(matches), 'matching line')} in {_plural(len(paths), 'file')}"
+                if matches
+                else "no line matches"
+            )
+            answer.add(f"{r.name} · grep `{text}`{where} · {at.describe()} — {summary}")
+            for each in paths:
+                answer.add()
+                if not answer.add(each):
+                    break
+                previous = None
+                for hit in (h for h in hits if h.path == each):
+                    if previous is not None and hit.number > previous + 1:
+                        answer.add("  --")
+                    if not answer.add(f"  {hit.number}{':' if hit.match else '-'} {_cut_line(hit.text)}"):
+                        break
+                    previous = hit.number
+                if answer.full:
+                    break
+            if any(sum(1 for h in matches if h.path == each) >= GREP_PER_FILE for each in paths):
+                answer.add(f"(at most {GREP_PER_FILE} matches a file are shown — narrow with `path` or the pattern)")
+        note = None
+        if answer.full or cut:
+            note = "cut: more than fits — narrow with `path` or the pattern" + (
+                "" if files_only else ", or files_only=true"
+            )
+        elif tree_cut:
+            note = (
+                "the commit holds more files than the server reads at once: not all were searched — narrow with `path`"
+            )
+        return answer.text(note)
 
     # --- read_guidance --------------------------------------------------------------------------------------------
 

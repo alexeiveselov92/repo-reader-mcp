@@ -6,9 +6,9 @@ many repositories — without ever changing them.
 
 > **Status: pre-alpha.** It reads local repositories, and remote ones it mirrors from any git host — one by one, or a
 > whole group by a pattern (`github: acme/shop-*`) — at any branch, tag or commit: history, diffs, blame. One server
-> can serve a team over HTTP behind a token. Run from a clone of this source ([getting started](docs/getting-started.md));
-> search and a published package are next: the plan is in [dev/PLAN.md](dev/PLAN.md), the design in
-> [dev/DESIGN.md](dev/DESIGN.md).
+> can serve a team over HTTP behind a token, and search across all its repositories at once. Run from a clone of this
+> source ([getting started](docs/getting-started.md)); hiding secrets found in files and a published package are next:
+> the plan is in [dev/PLAN.md](dev/PLAN.md), the design in [dev/DESIGN.md](dev/DESIGN.md).
 
 ## Why
 
@@ -24,7 +24,7 @@ whole team.
 - **History**: commits of a repository or a path, a commit with its diff, a diff between two refs, blame.
 - **Guidance for agents**: a repository's `AGENTS.md`, `CLAUDE.md`, rules and skills reach the agent reading it
   — plus what the people who run the server add, from its configuration or from another repository.
-- **Search** across all configured repositories at once, and `grep` inside one.
+- **Search** across all configured repositories at once, and `grep` inside one at any ref, with lines of context.
 - **Any code host**: local paths, GitHub, GitLab, Bitbucket, any git server — mirrored on a schedule,
   fetching only what is served; a group of repositories named by a pattern, new ones joining as they are created.
 - **Read-only by construction**: no command that writes, no shell; secrets found in files are hidden

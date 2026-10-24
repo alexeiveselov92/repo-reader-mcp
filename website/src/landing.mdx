@@ -21,6 +21,10 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
     Files and folders at any branch, tag or commit; the history of a repository or a path; a commit with its diff; the
     difference between two refs; who wrote each line, and why.
   </Card>
+  <Card title="Search across repositories" icon="magnifier">
+    One question over every repository at once — text or a regular expression, answered with files and line numbers
+    in a fraction of a second; `grep` in one repository at any ref, with lines around each match.
+  </Card>
   <Card title="Read-only by construction" icon="approve-check">
     A fixed set of reading git commands, no shell, an agent's ref resolved to a commit id before git sees it, no
     network while reading. Every protection has a test that fails when it is taken out.
@@ -43,5 +47,5 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
   </Card>
 </CardGrid>
 
-**Status: pre-alpha.** It runs from a clone of the source. Search and a published package come next — [the
-plan](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/dev/PLAN.md).
+**Status: pre-alpha.** It runs from a clone of the source. Hiding secrets found in files and a published package come
+next — [the plan](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/dev/PLAN.md).

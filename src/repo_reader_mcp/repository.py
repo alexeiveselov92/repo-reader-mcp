@@ -9,6 +9,9 @@ fetched on purpose (`Mirror.ensure`, served paths only) — the reading commands
 
 from __future__ import annotations
 
+import re
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from functools import cached_property
@@ -20,6 +23,9 @@ from .mirror import Mirror, SyncError
 
 BATCH = 100  # paths per git call when a command is limited to some files
 BLAME_HOPS = 8  # renames with changes blame is helped through on a mirror
+GREP_BATCH = 2000  # files named to one git grep
+SERVED_KEPT = 32  # commits whose list of served files is kept, per repository
+GREP_LINE = re.compile(r"^(\d+)([:-])(.*)$", re.DOTALL)
 SUBMODULE = "160000"
 EMPTY_TREE = {
     "sha1": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
@@ -85,6 +91,16 @@ class Entry:
 
 
 @dataclass(frozen=True)
+class Hit:
+    """A line grep found: a match, or a line of context around one."""
+
+    path: str
+    number: int
+    text: str
+    match: bool
+
+
+@dataclass(frozen=True)
 class Ref:
     name: str
     kind: str  # branch, remote, tag
@@ -145,6 +161,8 @@ class Repository:
         self.name = config.name
         self.matcher = config.matcher
         self.mirror = Mirror(config) if config.remote else None
+        self._served: OrderedDict[str, tuple[list[Entry], bool]] = OrderedDict()
+        self._served_lock = threading.Lock()
 
     def git(self, *args: str, limit: int | None = None, ok_codes: tuple[int, ...] = (0,)) -> Output:
         if self.mirror is not None and not self.mirror.ready:
@@ -278,6 +296,67 @@ class Repository:
         """What a folder holds directly — files, folders, submodules — before include/exclude."""
         out = self.git("ls-tree", "-z", "--full-tree", at.commit, "--", *([folder + "/"] if folder else []))
         return self._entries(out), out.cut
+
+    def served(self, at: At) -> tuple[list[Entry], bool]:
+        """The files a commit holds that include / exclude serve — text or not, links and submodules left out — and
+        whether the tree held more than was read. Kept for the last few commits: a commit never changes."""
+        with self._served_lock:
+            if at.commit in self._served:
+                self._served.move_to_end(at.commit)
+                return self._served[at.commit]
+        found, cut = self.files(at)
+        kept = [e for e in found if e.kind == "blob" and not e.is_link and self.matcher.allows(e.path)], cut
+        with self._served_lock:
+            self._served[at.commit] = kept
+            while len(self._served) > SERVED_KEPT:
+                self._served.popitem(last=False)
+        return kept
+
+    def grep(
+        self,
+        at: At,
+        pattern: str,
+        files: list[Entry],
+        *,
+        regex: bool = False,
+        ignore_case: bool = False,
+        context: int = 0,
+        per_file: int = 50,
+        limit: int | None = None,
+    ) -> tuple[list[Hit], bool]:
+        """The lines matching a pattern in some files at a commit, with `context` lines around each — and whether the
+        output was cut. The files are named one by one, literally: git reads no other file (on a mirror, it holds no
+        other's contents), so what include / exclude keep out is never searched. Binary files are skipped."""
+        if not files:
+            return [], False
+        self.ensure([(e.oid, e.path) for e in files])
+        known = {_quoted(e.path): e.path for e in files}
+        hits: list[Hit] = []
+        cut = False
+        for start in range(0, len(files), GREP_BATCH):
+            batch = files[start : start + GREP_BATCH]
+            args = ["grep", "-I", "--no-color", "-n", "--heading", "--break", "--max-count", str(per_file)]
+            args += ["-E" if regex else "-F", *(["-i"] if ignore_case else [])]
+            args += ["-C", str(context)] if context else []
+            args += ["-e", pattern, at.commit, "--", *(e.path for e in batch)]  # literal: GIT_LITERAL_PATHSPECS
+            try:
+                out = self.git(*args, limit=limit, ok_codes=(0, 1))
+            except ReadError as error:
+                if "-e option" in str(error) or "command line" in str(error) or "regex" in str(error).lower():
+                    raise ReadError(f"`{pattern}` is not a regular expression git reads: {error}") from None
+                raise
+            current = None
+            for line in records(out, "\n"):
+                if line.startswith(at.commit + ":"):
+                    current = known.get(line[len(at.commit) + 1 :])
+                    continue
+                found = GREP_LINE.match(line)
+                if current is not None and found:
+                    hits.append(Hit(current, int(found[1]), found[3], found[2] == ":"))
+            if out.cut:
+                cut = True
+                break
+        return hits, cut
 
     def blob(self, entry: Entry, limit: int) -> Output:
         self.ensure([(entry.oid, entry.path)])

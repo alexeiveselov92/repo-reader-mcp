@@ -216,3 +216,17 @@ middle of a tool call broke it — a call now reads one set. A members file writ
 checked again on load. A next page could hold `..`, and a host spelt differently in a next page was refused. A group
 with `listed: false` served nothing — refused. Noted, not changed: two servers sharing a mirrors folder whose token
 variables share a name but hold different tokens share mirrors (the docs say to give them different folders).
+
+## 2026-10-24 · Search without an index: `git grep` over the served files, by name
+
+**Decision** (made while building; the author asked Claude to go on). `search` runs `git grep` on each repository's
+default branch, eight repositories at once; `grep` runs it on one repository at any ref. Git is given the served files
+by name (in batches of 2,000; the list kept per commit, which never changes) — never a pattern of paths — so it reads
+no file include / exclude keep out, and on a mirror never needs contents the mirror doesn't hold. The agent's pattern
+reaches git after `-e` only. `grep` is git's, not `rg` / `find` / `ls` / `cat` as first designed: there is no checkout
+to run them on, and `list_files` / `read_file` already do what `find` / `ls` / `cat` would.
+
+**Why.** Measured on 18 real repositories: 0.2–0.4 s a search, 20 ms a grep — nothing for an index (Zoekt) to win at
+this size, and an index is a second copy of the code with its own include / exclude to keep right. The earlier
+platform's numbers (~80 repositories, 50 people) are where an index starts to pay; it waits until a deployment's
+numbers ask for it.

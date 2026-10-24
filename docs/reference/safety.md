@@ -6,7 +6,7 @@ What repo-reader-mcp never does, and how. Each protection has a test that fails 
 ## It never changes a repository
 
 - **Only reading commands, from a fixed set**: `rev-parse`, `symbolic-ref`, `for-each-ref`, `ls-tree`, `cat-file`,
-  `log`, `diff`, `blame`, `merge-base`. Any other command is refused before git starts.
+  `log`, `diff`, `blame`, `merge-base`, `grep`. Any other command is refused before git starts.
 - **The sync has its own fixed set**, used only on the mirrors the server keeps in its own folder: `init`, `config`,
   `ls-remote`, `fetch`, `update-ref`, `symbolic-ref`, `for-each-ref`, `ls-tree`, `rev-list`. Never `push`; nothing it
   runs touches a repository that isn't the server's own mirror.
@@ -123,6 +123,10 @@ an external diff…) are dropped before git starts — for reading and for the s
 `GIT_CONFIG_NOSYSTEM` — the operator's choice of which configuration files git reads.
 
 ## It serves only what it is told to
+
+Search and grep give git the served files by name, and no other: a file include / exclude keep out is never read by
+the search, so its lines can't come back — and an agent's pattern reaches git only after `-e`, as text to find, never
+as an option.
 
 `include` and `exclude` ([configuration](configuration.md)) are applied by every tool: an excluded path is never
 listed, never in a diff or a file list of a commit, never read or blamed, and a folder of excluded files answers as a
