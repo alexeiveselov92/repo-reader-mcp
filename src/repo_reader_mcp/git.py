@@ -3,23 +3,33 @@
 - Only commands from a fixed set, each run as a list of arguments — never through a shell.
 - Flags that keep git from running a program a repository's configuration names (an external diff, a textconv filter,
   a signature checker) are added to every call of the commands that would.
-- Git may not reach any host: a partial clone's missing contents are never fetched behind the server's back.
+- Git may not reach any host from a reading command: a partial clone's missing contents are never fetched behind the
+  server's back. Only the sync reaches a host (`maintain`): by the one protocol of the repository's URL, with a token
+  given in git's environment, never on its command line.
 - The environment the server was started from can't redirect git to another repository or inject configuration.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import tempfile
 import threading
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # The commands the server may run; each only reads.
 COMMANDS = frozenset(
     {"rev-parse", "symbolic-ref", "for-each-ref", "ls-tree", "cat-file", "log", "diff", "blame", "merge-base"}
 )
+
+# The commands the sync runs on a mirror it keeps: making it, asking the host what it has, fetching, moving its refs —
+# and reading the mirror to decide what to fetch. Only the network ones may reach a host.
+MAINTAIN = frozenset(
+    {"init", "config", "ls-remote", "fetch", "update-ref", "symbolic-ref", "for-each-ref", "ls-tree", "rev-list"}
+)
+NETWORK = frozenset({"ls-remote", "fetch"})
 
 # Added right after the command, before anything else: an external diff program, a textconv filter and a signature
 # checker are programs a repository's configuration names; blame's ignore-revs file is any file it names on the
@@ -30,12 +40,28 @@ ALWAYS = {
     "blame": ("--no-textconv", "--no-ignore-revs-file"),
 }
 
-# Configuration set on every call: no transport at all, so a partial clone never fetches what it lacks.
-CONFIG = ("protocol.allow=never",)
+# Every protocol git knows. `protocol.allow=never` is only a default: a `protocol.<name>.allow=always` in the machine's
+# configuration (a common workaround for `file`) would win over it, so each is refused by name as well.
+PROTOCOLS = ("file", "git", "ssh", "http", "https", "ext", "fd")
+
+# Configuration set on every call:
+# - no transport at all, so a partial clone never fetches what it lacks;
+# - nothing read from a commit's own files: a bare repository (a mirror) takes `.gitattributes` and `.mailmap` from its
+#   HEAD — files a repository's authors write, which a mirror may not hold (the empty tree's id for attributes; in a
+#   sha256 repository it names nothing, which git takes as the empty tree too);
+# - no hooks: the sync's ref updates would run a `reference-transaction` hook the machine's configuration names.
+CONFIG = (
+    "protocol.allow=never",
+    *(f"protocol.{name}.allow=never" for name in PROTOCOLS),
+    "attr.tree=4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+    "mailmap.blob=",
+    f"core.hooksPath={os.devnull}",
+)
 
 # The environment git is started with: the server's own, minus every GIT_* variable but the ones naming which
-# configuration files the operator wants read.
+# configuration files the operator wants read, and minus a program git would run to ask for a password.
 KEPT_GIT_VARIABLES = frozenset({"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM"})
+DROPPED_VARIABLES = frozenset({"SSH_ASKPASS"})
 SET_VARIABLES = {
     "GIT_TERMINAL_PROMPT": "0",
     "GIT_PAGER": "cat",
@@ -45,7 +71,10 @@ SET_VARIABLES = {
     "LC_ALL": "C",
 }
 
+OID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")  # an object id, sha1 or sha256
+
 TIMEOUT_SECONDS = 30
+NETWORK_TIMEOUT_SECONDS = 30 * 60  # a first fetch of a large history takes minutes
 OUTPUT_BYTES = 4 * 1024 * 1024  # the most of one command's output read, unless a call asks for another limit
 
 
@@ -67,18 +96,41 @@ class Output:
         return self.data.decode("utf-8", errors="replace")
 
 
-def environment() -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_") or k in KEPT_GIT_VARIABLES}
+@dataclass(frozen=True)
+class Access:
+    """How the sync may reach a repository's host: the one protocol its URL uses, and configuration given through
+    git's environment (a token's header) — never on the command line, where any user of the machine can read it."""
+
+    protocol: str
+    env: dict[str, str] = field(default_factory=dict, repr=False)
+
+
+def environment(extra: dict[str, str] | None = None) -> dict[str, str]:
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if (not k.startswith("GIT_") or k in KEPT_GIT_VARIABLES) and k not in DROPPED_VARIABLES
+    }
     env.update(SET_VARIABLES)
+    env.update(extra or {})
     return env
 
 
-def command(git_dir: str, args: Sequence[str]) -> list[str]:
-    """The full command line for one call; refuses a command outside the fixed set."""
-    if not args or args[0] not in COMMANDS:
+def command(
+    git_dir: str,
+    args: Sequence[str],
+    *,
+    allowed: frozenset[str] = COMMANDS,
+    protocol: str | None = None,
+    config: Sequence[str] = (),
+) -> list[str]:
+    """The full command line for one call; refuses a command outside the fixed set. No transport is allowed, unless
+    `protocol` names the one a network command of the sync may use."""
+    if not args or args[0] not in allowed:
         raise GitError(f"`{args[0] if args else ''}` is not a command this server runs")
-    config = [part for item in CONFIG for part in ("-c", item)]
-    return ["git", *config, f"--git-dir={git_dir}", args[0], *ALWAYS.get(args[0], ()), *args[1:]]
+    items = [*CONFIG, *([f"protocol.{protocol}.allow=always"] if protocol else []), *config]
+    options = [part for item in items for part in ("-c", item)]
+    return ["git", *options, f"--git-dir={git_dir}", args[0], *ALWAYS.get(args[0], ()), *args[1:]]
 
 
 def find_git_dir(path: str) -> str:
@@ -110,24 +162,59 @@ def find_git_dir(path: str) -> str:
 
 
 def run(git_dir: str, args: Sequence[str], *, limit: int | None = None, ok_codes: Sequence[int] = (0,)) -> Output:
-    """Run one git command in a repository and return what it printed.
+    """Run one reading git command in a repository and return what it printed.
 
     Reading stops after `limit` bytes (`OUTPUT_BYTES` unless a call asks for another) — the command is stopped and the
     output marked cut — so no output (a huge diff, the file list of a huge tree) ever sits in memory whole.
     """
+    # GIT_NO_LAZY_FETCH (git 2.44 and later): a missing object is never fetched, whatever the configuration says.
+    env = environment({"GIT_NO_LAZY_FETCH": "1"})
+    return _execute(command(git_dir, args), git_dir, env, limit=limit, ok_codes=ok_codes)
+
+
+def maintain(
+    git_dir: str,
+    args: Sequence[str],
+    *,
+    access: Access | None = None,
+    input: bytes | None = None,
+    limit: int | None = None,
+    config: Sequence[str] = (),
+    timeout: int | None = None,
+) -> Output:
+    """Run one command of the sync on a mirror. A network command reaches the host by `access` — its protocol alone,
+    its environment; every other command reaches nothing."""
+    network = access is not None and bool(args) and args[0] in NETWORK
+    cmd = command(git_dir, args, allowed=MAINTAIN, protocol=access.protocol if network else None, config=config)
+    env = environment(access.env if network else None)
+    timeout = timeout or (NETWORK_TIMEOUT_SECONDS if network else TIMEOUT_SECONDS)
+    return _execute(cmd, git_dir, env, limit=limit, input=input, timeout=timeout)
+
+
+def _execute(
+    cmd: list[str],
+    cwd: str,
+    env: dict[str, str],
+    *,
+    limit: int | None = None,
+    ok_codes: Sequence[int] = (0,),
+    input: bytes | None = None,
+    timeout: int = TIMEOUT_SECONDS,
+) -> Output:
     limit = OUTPUT_BYTES if limit is None else limit
-    cmd = command(git_dir, args)
-    with tempfile.TemporaryFile() as err:
-        proc = subprocess.Popen(
-            cmd, cwd=git_dir, env=environment(), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err
-        )
+    with tempfile.TemporaryFile() as err, tempfile.TemporaryFile() as given:
+        if input is not None:
+            given.write(input)
+            given.seek(0)
+        stdin = given if input is not None else subprocess.DEVNULL
+        proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=stdin, stdout=subprocess.PIPE, stderr=err)
         timed_out = threading.Event()
 
         def stop() -> None:
             timed_out.set()
             proc.kill()
 
-        timer = threading.Timer(TIMEOUT_SECONDS, stop)
+        timer = threading.Timer(timeout, stop)
         timer.start()
         try:
             assert proc.stdout is not None
@@ -145,7 +232,7 @@ def run(git_dir: str, args: Sequence[str], *, limit: int | None = None, ok_codes
     if cut:
         return Output(data, True)
     if timed_out.is_set():
-        raise GitError(f"git took longer than {TIMEOUT_SECONDS} seconds and was stopped", stderr)
+        raise GitError(f"git took longer than {timeout} seconds and was stopped", stderr)
     if code not in ok_codes:
         raise GitError(stderr.splitlines()[-1] if stderr else f"git exited with code {code}", stderr)
     return Output(data, False)

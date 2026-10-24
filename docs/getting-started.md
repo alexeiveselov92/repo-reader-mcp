@@ -24,13 +24,20 @@ repositories:
     path: ~/code/shop-backend
     description: The shop's backend — orders, payments, the public API.
     exclude: ["*.pem", "*.env"]
+
+  - url: https://github.com/acme/shop-frontend.git   # a repository on a host: the server keeps a mirror of it
+    token_env: GITHUB_TOKEN                          # for a private one: the variable holding a read-only token
 ```
 
-Check it:
+A repository on a host is [mirrored](remote-repositories.md) on your machine — its history, and the contents of the
+files it serves. Check the file (for a remote repository, it also asks the host whether it answers):
 
 ```bash
 uv run repo-reader-mcp --config ~/repo-reader.yaml --check
 ```
+
+The server makes the mirrors in the background when it starts; to make them now and see how it went, run it once with
+`--sync`.
 
 ## 3. Connect it to your agent
 

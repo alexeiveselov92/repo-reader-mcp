@@ -7,7 +7,8 @@ Every tool repo-reader-mcp offers to an agent. All are read-only: each says so t
 
 - **`repo`** — a repository's name, as `list_repos` shows it.
 - **`ref`** — any branch, tag or commit id: `main`, `release/2.1`, `v1.2.0`, `a1b2c3d`, `main~3`, `origin/main`.
-  Without it, the repository's default branch (for a local repository: the branch its checkout is on).
+  Without it, the repository's default branch (for a local repository: the branch its checkout is on; for a mirror:
+  the host's). A mirror holds the branches and tags its configuration keeps, with their whole history.
 - **Paths** are written from the repository's root: `src/app.py`, `docs`. A leading or trailing `/` is ignored; `..`
   and `.` are refused.
 - **Only what is committed is read.** Files changed but not committed in a checkout, and files never added, are not
@@ -31,12 +32,14 @@ status, `read_only: true` and how many repositories it serves.
 
 The repositories this server reads. Takes nothing. For each: its name, its description (from the configuration), its
 default branch with the commit it is at, the date and the subject of that commit, how many branches and tags it has,
-whether only part of it is served, and whether it carries [guidance for agents](guidance.md). Repositories configured
-with `listed: false` are not shown.
+whether only part of it is served, and whether it carries [guidance for agents](guidance.md). For a
+[mirrored](../remote-repositories.md) repository, where it is mirrored from, when it last synced, and why the last
+sync failed if it did; one not mirrored yet says so. Repositories configured with `listed: false` are not shown.
 
 ```
 ## shop
 A made-up shop.
+Mirrored from https://github.com/acme/shop.git, synced 2026-10-24 10:30 UTC.
 Default branch: main @ 14a4c0422ae3 (2026-03-01) — Add the catalog and assets; drop the legacy config
 2 branches, 2 tags — list_refs lists them
 ```
@@ -119,7 +122,8 @@ The answer: the commit's id, author and date, who committed it and when (when th
 message; the files it changed — `A` added, `M` modified, `D` deleted, `T` type changed — with lines added and removed;
 then the diff. A merge is shown against its first parent (what the merge brought into the branch). The first commit of
 a repository is shown as adding everything it holds. A rename shows as a deletion and an addition. A diff longer than
-the answer is cut — narrow it with `path`.
+the answer is cut — narrow it with `path`. A served file replaced by a folder of files this server doesn't serve is
+listed, but its diff is not shown (git would bring the folder's files with it).
 
 ## `diff`
 
@@ -157,6 +161,10 @@ is one `show_commit` away:
 ```
 
 Binary files and links are refused.
+
+On a [mirror](../remote-repositories.md#reading-an-older-commit), blame follows a file through renames as a local
+repository does, fetching what git compares; where a file was renamed with changes beside a deleted file that is not
+served, blame stops at that commit and the answer says so — lines shown there are as old as it, or older.
 
 ## `read_guidance`
 

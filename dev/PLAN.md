@@ -26,7 +26,7 @@ with something visible: a real agent answering through the server.
 
 ## Milestone 2. Remote repositories — 2 sessions
 
-- [ ] Mirrors: partial clones from any git URL, a token by variable name, `refs` kept fresh on a schedule,
+- [x] Mirrors (2026-10-24): partial clones from any git URL, a token by variable name, `refs` kept fresh on a schedule,
       force-pushes followed; `include` / `exclude`; nothing fetched outside them (counted from the mirror).
 - [ ] Groups: `github: owner/prefix-*` (and GitLab's groups) resolved from the host on every sync — new repositories
       join, archived ones leave; `skip` (names or patterns); the entry's settings and guidance apply to every member.

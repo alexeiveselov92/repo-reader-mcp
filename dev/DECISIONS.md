@@ -104,3 +104,61 @@ with `read_guidance`.
 A server can't know what an agent read, and on a shared server it can't tell agents apart. One line per answer
 (~40 tokens) works on every transport; real Claude Code read the guidance on its own in every conversation and
 followed it.
+
+## 2026-10-24 · Contents of an older commit are fetched on purpose, for served paths only
+
+**Decision** (proposed at the session's start; the author said "go" without choosing — to confirm). When a tool needs
+the contents of a file at a commit whose contents the mirror lacks, the server fetches exactly those contents from the
+host first (`Mirror.ensure`), after checking each path against include / exclude, and then reads. The alternative —
+answering "not in the mirror" — was safer but leaves agents stuck on every older commit.
+
+**Why.** "Never fetched by a reading command" stays true: the reading commands keep `protocol.allow=never`; the fetch
+is a separate, deliberate step that names the objects and checks their paths in one place. Measured on a public
+repository: five real questions fetched 29 contents on top of the 190 the sync took, none of an excluded path.
+
+## 2026-10-24 · A mirror keeps every branch and tag unless `refs` narrows it; named from its URL
+
+**Decision** (made while building). `refs` not given: every branch and tag (history without contents is cheap); the
+default branch is always kept. `name` defaults to the URL's last part without `.git`. Mirrors live in
+`~/.cache/repo-reader-mcp` by default — they can be rebuilt, so a cache folder — at `<name>-<digest of URL>.git`:
+a URL change makes a new mirror instead of mixing two histories. The sync's status is a file beside the mirror, so
+several server processes (one per person's agent over stdio) tell the same story.
+
+## 2026-10-24 · With a token, no redirect is followed
+
+**Decision** (found by a test while building). The token is an `Authorization` header set for the URL's host through
+git's environment; git chooses its extra headers once per command and sends them with every request — after a redirect,
+to the new host too. So with a token the sync sets `http.followRedirects=false`; a redirecting host fails the sync with
+a message to give the URL it redirects to. Without a token nothing secret travels and git's default stays.
+
+## 2026-10-24 · Attributes are never read from a commit
+
+**Decision** (found while building). Every git call sets `attr.tree` to the empty tree. A bare repository reads
+`.gitattributes` from HEAD; on a mirror that file may be excluded and absent (a diff failed), and anywhere it is text a
+repository's authors write that changes how git reads it (diff drivers, textconv — already off by flags).
+
+## 2026-10-24 · Blame on a mirror follows renames as far as the served files allow, and says where it stops
+
+**Decision** (made while building; widened after the refuting review). Blame follows renames; for a rename with
+changes git compares the file with every file deleted in that commit. The mirror fetches those when all are served and
+follows the file into its old name (up to 8 hops); where one isn't served, blame reruns from that commit and says it
+stopped there. A move without changes is followed by object id, reading nothing.
+
+## 2026-10-24 · A mirror per configuration; mirrors share nothing
+
+**Decision** (after the refuting review). A mirror's folder digest covers its URL, `refs`, `include` and `exclude`
+(not the URL alone): two servers on one machine sharing the cache folder — or one configuration changed — would
+otherwise read each other's branches and contents. A changed configuration refetches; the old mirror is left for the
+operator to delete.
+
+## 2026-10-24 · The refuting review's findings (all closed, each with a test that fails without its fix)
+
+A served file replaced by a folder leaked the folder's excluded files into a diff (since milestone 1, local too); the
+machine's `protocol.file.allow=always` let reading fetch; a tag of a tree made the sync fetch excluded contents; two
+configurations shared a mirror; the machine's per-host `followRedirects` sent the token on; askpass and hooks ran with
+the token in their environment; an unserved `.mailmap` broke every tool on a mirror; blame stopped at renames it could
+follow, and failed on a path once a submodule; a contents id answered differently as a ref; a host's detached HEAD
+left no default branch; a token over plain http and a URL with a query were accepted. Left as they are, noted: a
+files-only diff on a mirror fetches the changed files' contents to count lines; fetches made for reading don't repack,
+so packs pile up between syncs that move nothing.
+

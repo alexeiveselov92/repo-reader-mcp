@@ -6,6 +6,7 @@ start; a wrong entry stops the server before it serves anything, naming the entr
 ```bash
 repo-reader-mcp --config /etc/repo-reader/config.yaml          # serve over stdio
 repo-reader-mcp --config /etc/repo-reader/config.yaml --check  # check the file, list what it serves, exit
+repo-reader-mcp --config /etc/repo-reader/config.yaml --sync   # bring every mirror up to date once, exit
 REPO_READER_MCP_CONFIG=/etc/repo-reader/config.yaml repo-reader-mcp
 ```
 
@@ -18,9 +19,17 @@ repositories:
     description: The shop's backend — orders, payments, the public API.
     exclude: ["**/fixtures/**", "*.pem"]
 
+  - url: https://github.com/acme/shop-frontend.git   # mirrored; named shop-frontend
+    token_env: GITHUB_TOKEN
+    refs: [main, "release/*"]
+
   - name: handbook
     path: ../handbook                 # relative to this file's folder
     include: ["docs/**", "README.md"]
+
+mirrors:
+  folder: /var/lib/repo-reader-mcp
+  every_minutes: 10
 
 limits:
   answer_characters: 40000
@@ -28,12 +37,16 @@ limits:
 
 ## `repositories`
 
-A list; at least one. Each entry is one repository.
+A list; at least one. Each entry is one repository: a local one (`path`) or a remote one (`url`), never both.
 
 | Key | | |
 |---|---|---|
-| `name` | required | How agents and tools name it. Up to 100 letters, digits, `.`, `_`, `-`, starting with a letter or digit; unique. |
-| `path` | required | The repository's top folder: a checkout (with its `.git` inside) or a bare repository. `~` is expanded; a relative path is taken from the configuration file's folder. A folder *inside* a repository is refused — the whole repository above it would be served. |
+| `name` | required for `path` | How agents and tools name it. Up to 100 letters, digits, `.`, `_`, `-`, starting with a letter or digit; unique. For a remote repository it defaults to the last part of its URL, without `.git`. |
+| `path` | | A repository on the server's disk — its top folder: a checkout (with its `.git` inside) or a bare repository. `~` is expanded; a relative path is taken from the configuration file's folder. A folder *inside* a repository is refused — the whole repository above it would be served. |
+| `url` | | A repository on a code host, [mirrored](../remote-repositories.md): `https://…`, `http://…`, `ssh://…`, `git@host:path`, `git://…` or `file://…`. A URL can't carry credentials (`https://user:token@…` is refused — name the token's variable in `token_env`), a query or a fragment; remote helpers (`ext::…`) are refused. Changing `url`, `refs`, `include` or `exclude` makes a new mirror. |
+| `token_env` | | With an https `url` (plain http only to this machine): the name of the environment variable that holds a read-only token — never the token. The server won't start when the variable is not set. Without it, git uses the server account's own setup (ssh keys, a credential helper). [Which token for which host](../remote-repositories.md#tokens). |
+| `token_user` | | The user name sent with the token. Default `x-access-token` (GitHub); `oauth2` for GitLab, `x-token-auth` for Bitbucket Cloud. |
+| `refs` | | With `url`: the branches and tags the mirror keeps, by name or pattern (`main`, `release/*`, `v*` — `*` matches any characters, `/` included). The default branch is always kept. Not given: every branch and tag. |
 | `description` | | A sentence for agents: what this repository is. Shown by `list_repos`. |
 | `listed` | | `false` keeps it from agents — out of `list_repos` and every tool — as a source of [guidance](guidance.md) for other repositories only. Default `true`. |
 | `guidance` | | [Guidance for agents](guidance.md) about this repository: `text`, `files`, `from` (folders of other configured repositories), `own` (whether its own `AGENTS.md`, rules and skills count; default `true`). |
@@ -41,10 +54,11 @@ A list; at least one. Each entry is one repository.
 | `exclude` | | Patterns of paths never served, even inside `include`. |
 
 **Only what is committed is served.** The server reads commits, never a checkout's working files: changes not
-committed, and files never added (a local `.env`), are not seen. A checkout's own branch is its default branch.
+committed, and files never added (a local `.env`), are not seen. A checkout's own branch is its default branch; a
+mirror's is the host's.
 
-Remote repositories (`url`, a token by name, `refs`, a sync schedule) are planned and not read yet: an entry with them
-is refused with a message saying so.
+Groups of repositories (`github: acme/shop-*`, with `skip`) are planned and not read yet: an entry with them is refused
+with a message saying so.
 
 ### Patterns
 
@@ -70,6 +84,15 @@ A path is served when `include` (if given) matches it and `exclude` doesn't.
 [Guidance for agents](guidance.md) for every repository on the server: `text`, and `files` on the server's disk (read at
 start; relative paths from this file's folder).
 
+## `mirrors`
+
+Where remote repositories are mirrored, and how often ([how mirrors work](../remote-repositories.md)).
+
+| Key | Default | |
+|---|---|---|
+| `folder` | `~/.cache/repo-reader-mcp` | The folder mirrors live in (`$XDG_CACHE_HOME/repo-reader-mcp` when that is set). `~` is expanded; a relative path is taken from the configuration file's folder. Made at the first sync. |
+| `every_minutes` | 10 | How often each mirror is brought up to date, from 0 to 1440. The server syncs at start, then this often; `0` syncs at start only. |
+
 ## `limits`
 
 | Key | Default | |
@@ -85,9 +108,10 @@ in part, saying so) and the command may run for 30 seconds.
 Every problem is named at once, with where it is:
 
 ```
-repo-reader-mcp: the configuration config.yaml has 2 problems:
+repo-reader-mcp: the configuration config.yaml has 3 problems:
   - repositories[0] (shop-backend) → path: /srv/code/shop-backnd is not a folder
-  - repositories[1] (handbook) → colour: an unknown key
+  - repositories[1] (shop-frontend) → token_env: the variable GITHUB_TOKEN is not set in the server's environment
+  - repositories[2] (handbook) → colour: an unknown key
 ```
 
 The server exits with code 2 and serves nothing.

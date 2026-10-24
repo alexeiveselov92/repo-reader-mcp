@@ -43,10 +43,85 @@ def test_an_unknown_key_is_named(shop):
     assert found == ["repositories[0] (shop) → colour: an unknown key"]
 
 
-def test_remote_keys_say_they_come_later(shop):
+def test_groups_say_they_come_later(shop):
     path, _ = shop
-    found = problems({"repositories": [{"name": "web", "url": "https://example.com/acme/web.git"}]}, path.parent)
-    assert any("url" in p and "not supported yet" in p for p in found)
+    found = problems({"repositories": [{"github": "acme/shop-*"}]}, path.parent)
+    assert any("github" in p and "not supported yet" in p for p in found)
+
+
+@pytest.mark.parametrize(
+    ("url", "name"),
+    [
+        ("https://example.com/acme/shop-web.git", "shop-web"),
+        ("https://example.com/acme/shop-web", "shop-web"),
+        ("ssh://git@example.com/acme/shop-web.git", "shop-web"),
+        ("git@example.com:acme/shop-web.git", "shop-web"),
+        ("file:///srv/remotes/shop-web.git", "shop-web"),
+    ],
+)
+def test_a_remote_repository_is_named_from_its_url(tmp_path, url, name):
+    config = parse_config({"repositories": [{"url": url}], "mirrors": {"folder": "mirrors"}}, tmp_path)
+    repo = config.repositories[0]
+    assert repo.name == name and repo.remote.url == url
+    assert repo.git_dir.startswith(str(tmp_path / "mirrors" / f"{name}-")) and repo.git_dir.endswith(".git")
+
+
+@pytest.mark.parametrize(
+    ("url", "says"),
+    [
+        ("https://acme:hunter2@example.com/acme/web.git", "can't carry credentials"),
+        ("https://made-up-token@example.com/acme/web.git", "can't carry credentials"),
+        ("ext::sh -c touch% /tmp/pwned", "spaces or control characters"),
+        ("ext::sh", "remote helpers"),
+        ("ftp://example.com/acme/web.git", "not a protocol this server fetches by"),
+        ("/srv/code/web", "is given by `path`"),
+        ("https:///acme/web.git", "names no host"),
+        ("https://example.com/acme/web.git?private_token=made-up", "can't carry a query"),
+        ("https://example.com/acme/web.git#main", "can't carry a query"),
+    ],
+)
+def test_a_url_that_can_t_be_served_is_named(tmp_path, url, says):
+    found = problems({"repositories": [{"name": "web", "url": url}]}, tmp_path)
+    assert found[0].startswith("repositories[0] (web) → url:") and says in found[0], found
+
+
+def test_a_token_is_named_by_its_variable_and_must_be_set(tmp_path, monkeypatch):
+    monkeypatch.delenv("ACME_TOKEN", raising=False)
+    entry = {"url": "https://example.com/acme/web.git", "token_env": "ACME_TOKEN"}
+    found = problems({"repositories": [entry]}, tmp_path)
+    assert found == [
+        "repositories[0] (web) → token_env: the variable ACME_TOKEN is not set in the server's environment"
+    ]
+    monkeypatch.setenv("ACME_TOKEN", "made-up")
+    repo = parse_config({"repositories": [entry]}, tmp_path).repositories[0]
+    assert repo.remote.token_env == "ACME_TOKEN" and repo.remote.token_user == "x-access-token"
+    assert "made-up" not in repr(repo)  # the configuration holds the name, never the value
+    found = problems({"repositories": [{**entry, "token_env": "not a variable"}]}, tmp_path)
+    assert found[0].startswith("repositories[0] (web) → token_env:")
+
+
+def test_remote_keys_belong_to_remote_repositories(shop, tmp_path, monkeypatch):
+    path, _ = shop
+    monkeypatch.setenv("ACME_TOKEN", "made-up")
+    cases = [
+        ({"name": "shop", "path": str(path), "refs": ["main"]}, "refs: it is for a remote repository"),
+        ({"name": "shop", "path": str(path), "url": "https://example.com/a/shop.git"}, "not both"),
+        ({"name": "shop"}, "give either `path`"),
+        ({"url": "ssh://git@example.com/a/web.git", "token_env": "ACME_TOKEN"}, "a token goes with an https url"),
+        ({"url": "https://example.com/a/web.git", "token_user": "bot"}, "token_user: it goes with `token_env`"),
+        ({"url": "https://example.com/"}, "none can be taken from its url"),
+        ({"url": "http://example.com/a/web.git", "token_env": "ACME_TOKEN"}, "a token is sent over https only"),
+    ]
+    for entry, says in cases:
+        found = problems({"repositories": [entry]}, tmp_path)
+        assert len(found) == 1 and says in found[0], (entry, found)
+
+
+def test_how_often_mirrors_are_synced_is_bounded(tmp_path):
+    entry = {"url": "https://example.com/a/web.git"}
+    assert parse_config({"repositories": [entry]}, tmp_path).mirrors.every_minutes == 10
+    found = problems({"repositories": [entry], "mirrors": {"every_minutes": -1}}, tmp_path)
+    assert found[0].startswith("mirrors → every_minutes:")
 
 
 def test_a_missing_folder_and_a_folder_that_is_no_repository_are_named(shop, tmp_path):

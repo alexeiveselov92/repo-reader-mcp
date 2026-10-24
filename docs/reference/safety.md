@@ -7,6 +7,9 @@ What repo-reader-mcp never does, and how. Each protection has a test that fails 
 
 - **Only reading commands, from a fixed set**: `rev-parse`, `symbolic-ref`, `for-each-ref`, `ls-tree`, `cat-file`,
   `log`, `diff`, `blame`, `merge-base`. Any other command is refused before git starts.
+- **The sync has its own fixed set**, used only on the mirrors the server keeps in its own folder: `init`, `config`,
+  `ls-remote`, `fetch`, `update-ref`, `symbolic-ref`, `for-each-ref`, `ls-tree`, `rev-list`. Never `push`; nothing it
+  runs touches a repository that isn't the server's own mirror.
 - **No shell.** Every command is a list of arguments handed to git directly; nothing an agent writes is ever read by a
   shell.
 - **It never checks anything out.** Files are read from commits, never from a working folder — which is also why many
@@ -30,23 +33,68 @@ file anywhere on the server's disk for blame to read (`blame.ignoreRevsFile` —
 server turns each off on every call (`--no-ext-diff`, `--no-textconv`, `--no-show-signature`,
 `--no-ignore-revs-file`) — a diff is always of the file's own text.
 
-## It never reaches the network
+Nothing is read from a commit's own files to change how git reads it: no attributes (`attr.tree` is the empty tree)
+and no `.mailmap` (`mailmap.blob` is empty). In a bare repository — every mirror is one — git would take
+`.gitattributes` and `.mailmap` from the default branch: files the repository's authors write, which a mirror may not
+even hold. No hook runs either (`core.hooksPath` is empty): the sync moves refs, which would run a hook the machine's
+configuration names.
 
-Every command runs with no transport allowed (`protocol.allow=never`). A repository that is a partial clone — missing
-some files' contents — is not completed behind the server's back: reading a missing content answers that it isn't in
-the local copy.
+## Reading never reaches the network
+
+Every reading command runs with no transport allowed — `protocol.allow=never`, and each protocol refused by name as
+well (`protocol.file.allow=never`, …): a `protocol.<name>.allow=always` in the machine's git configuration would
+otherwise win over the default. And git is told never to fetch a missing object (`GIT_NO_LAZY_FETCH`, obeyed by git
+2.44 and later). A repository that is a partial clone — missing some files' contents — is not completed behind the
+server's back: for a local repository, reading a missing content answers that it isn't in the local copy.
+
+Only the [sync](../remote-repositories.md) reaches a host, and only for the mirrors it keeps:
+
+- **By the URL's own protocol, alone.** A network command allows exactly the protocol of the configured URL — a URL
+  rewritten on the way (`insteadOf` in the machine's git configuration) can't switch it to another, even one the
+  machine's configuration allows. Remote helpers (`ext::`, which runs a command) are refused in the configuration.
+- **Contents of served paths only.** The sync fetches history without contents, then the contents of the files
+  `include` / `exclude` serve. Before a tool reads a file's older version, the contents it needs are fetched on purpose
+  — and the path is checked again there: whatever asks, nothing outside `include` / `exclude` is fetched. A diff counts
+  lines of the served files only, so git never needs the others.
+- **No submodules, no tags it wasn't asked for**: `--recurse-submodules=no`, `--no-tags`. A tag of a folder or of a
+  file's contents (rather than of a commit) is not kept: its paths are not the repository's, so include / exclude
+  can't judge them. (Git sends what a ref names: a tag of a file's contents brings that one file, which nothing reads.)
+- **A mirror per configuration.** A mirror's folder is named by a digest of its URL, `refs`, `include` and `exclude`:
+  another server on the same machine, or this configuration changed, gets a mirror of its own — never the branches or
+  contents another configuration took.
+- **A file's id tells nothing.** A file's id is its contents' digest; given as a ref, the id of contents a mirror lacks
+  answers as an unknown name does, so an agent can't confirm contents it guessed.
+
+## Tokens
+
+- **Named, never written**: the configuration holds the name of the environment variable (`token_env`); a URL with
+  credentials, a query or a fragment in it is refused (agents are shown the URL).
+- **Over https**: a token with a plain `http://` URL is refused (it would show on the way), except to this machine.
+- **In git's environment only**: the token reaches git as an `Authorization` header in its environment — never on a
+  command line (any user of the machine can list those), in a URL, in a mirror's configuration or files, in the sync's
+  status, in a log line or an answer. An error is scrubbed of it, in every form it travels in.
+- **To its host only**: the header is set for the URL's host, and with a token **no redirect is followed** — git keeps
+  a header for every request of a command, wherever a redirect sends them, so a host that redirects elsewhere would
+  hand the token on (found by a test of this server, 2026-10-24). The setting is made for the repository's full URL,
+  the closest match there is, so the machine's git configuration can't turn redirects back on for that host.
+- **No one else's credentials, no one else's programs**: with a token, the credential helpers of the server's account
+  are switched off for the sync — a refused token is never followed by credentials stored for someone else, nor
+  stored by a helper — and so is any program asking for a password (`core.askPass`, `SSH_ASKPASS`), which would run
+  with the token in its environment.
 
 ## The environment it was started from can't redirect it
 
 Git variables in the server's environment (`GIT_DIR`, `GIT_NAMESPACE`, `GIT_OBJECT_DIRECTORY`, injected configuration,
-an external diff…) are dropped before git starts. Kept: `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`,
+an external diff…) are dropped before git starts — for reading and for the sync. Kept: `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`,
 `GIT_CONFIG_NOSYSTEM` — the operator's choice of which configuration files git reads.
 
 ## It serves only what it is told to
 
 `include` and `exclude` ([configuration](configuration.md)) are applied by every tool: an excluded path is never
 listed, never in a diff or a file list of a commit, never read or blamed, and a folder of excluded files answers as a
-folder that isn't there. Narrowing a history or a diff to an excluded path is refused, judged by the path alone — so the
+folder that isn't there. A diff keeps only the sections of the files asked for: git takes a path as a folder too, so
+where a served file `config` was replaced by a folder holding an excluded `config/prod.env`, that file would come with
+it — instead `config` is listed and its diff not shown (found by the refuting review, 2026-10-24). Narrowing a history or a diff to an excluded path is refused, judged by the path alone — so the
 answer never tells whether it exists or changed. A commit that changed excluded files says how many it doesn't show —
 never which.
 
@@ -64,11 +112,11 @@ shouldn't instruct agents is configured with `own: false`. Guidance obeys `inclu
 
 Every answer is capped (`limits.answer_characters`) and says when it was cut. Git's output is read up to 4 MB per
 command (a file up to 10 MB) and the command stopped there — a huge tree, history or diff never sits in memory whole;
-the answer says it is partial. One git command is stopped after 30 seconds.
+the answer says it is partial. One reading git command is stopped after 30 seconds; one that reaches a host, after 30
+minutes.
 
 ## Not yet
 
 - **Secrets in files are not hidden yet.** A key committed to a served file is shown as it is. Until the secret scan
-  comes (`dev/PLAN.md`, milestone 4), keep such files out with `exclude` (`*.pem`, `*.env`, `secrets`).
-- Remote repositories, their tokens and their schedule come in milestone 2; tokens will travel in git's environment
-  only, never on a command line or in an error.
+  comes (`dev/PLAN.md`, milestone 4), keep such files out with `exclude` (`*.pem`, `*.env`, `secrets`) — for a mirror,
+  that also keeps their contents off the server's disk.

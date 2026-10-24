@@ -19,6 +19,18 @@ repositories:
     path: /srv/code/acme-rules
     listed: false                        # a source of guidance only; agents don't see it
 
+  - url: https://gitlab.example.com/acme/shop-frontend.git   # mirrored; named shop-frontend from its url
+    token_env: GITLAB_TOKEN              # the variable holding a read-only token — never the token
+    token_user: oauth2                   # GitLab's; GitHub needs none
+    refs: [main, "release/*"]            # the branches and tags kept; the default branch always
+    exclude: ["*.pem", "*.env"]          # their contents are never fetched
+
+  - url: git@git.example.com:acme/tools.git   # over ssh: the server account's own keys
+
+mirrors:
+  folder: /var/lib/repo-reader-mcp       # default: ~/.cache/repo-reader-mcp
+  every_minutes: 10                      # 0: at start only
+
 guidance:                                # for every repository
   text: Say which commit you read.
 
@@ -27,14 +39,6 @@ limits:
 
 # Planned (dev/PLAN.md, milestone 2) — refused with a message today:
 #
-#  - name: shop-frontend
-#    url: https://gitlab.example.com/acme/shop-frontend.git
-#    token_env: GITLAB_TOKEN             # read-only
-#    refs: [main, "release/*"]           # kept fresh; any other commit readable on demand
-#
 #  - github: acme/shop-*                 # a group: every repository whose name matches
 #    token_env: GITHUB_TOKEN
 #    skip: [acme/shop-sandbox]
-#
-# sync:
-#   every_minutes: 10

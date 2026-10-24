@@ -17,7 +17,7 @@ from pydantic import Field
 from .config import Config
 from .guidance import Guide, render, render_one
 from .paths import PathError, clean_path, under
-from .repository import At, Change, Entry, ReadError, Repository
+from .repository import BATCH, At, Change, Entry, ReadError, Repository
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False)
 
@@ -25,7 +25,6 @@ FILE_BYTES = 10 * 1024 * 1024  # a file larger than this is not read
 BINARY_SNIFF = 8000  # a NUL byte in the first this-many bytes marks a file binary
 LINE_CHARACTERS = 2000  # a longer line is cut, saying how much
 NOTE_RESERVE = 400  # kept free in every answer for the closing note
-PATCH_BATCH = 100  # paths per git call when a diff is limited to some files
 BLAME_LINES = 5000  # the most lines one blame call works on
 
 # What is left of the answer limit for a tool's own answer, once guidance due with it took its share (at most half).
@@ -191,6 +190,8 @@ def register(server: MCPServer, config: Config) -> None:
             answer.add(f"## {repo.name}")
             if repo.config.description:
                 answer.add(repo.config.description.strip())
+            if repo.mirror is not None and repo.mirror.ready:
+                answer.add(repo.mirror.describe())
             try:
                 at = repo.resolve(None)
             except ReadError as error:
@@ -421,6 +422,14 @@ def register(server: MCPServer, config: Config) -> None:
         scoped = [c for c in changes if path is None or under(c.path, path)]
         served = [c for c in scoped if r.matcher.allows(c.path)]
         hidden = len(scoped) - len(served)
+        whole = path is None and r.matcher.takes_everything
+        # A served file whose path is also a folder of files not served (a file replaced by a folder): git, given the
+        # path, would take the folder's files too — so it is listed, but its lines are not counted nor its diff shown.
+        unserved = [c.path for c in changes if not r.matcher.allows(c.path)]
+        blocked = {c.path for c in served if any(u.startswith(c.path + "/") for u in unserved)}
+        counted = [c for c in served if c.path not in blocked]
+        counted = r.count_lines(base, head, counted, whole=whole) if counted else counted
+        served = [next((d for d in counted if d.path == c.path), c) for c in served]
         added = sum(c.added or 0 for c in served)
         deleted = sum(c.deleted or 0 for c in served)
         scope = f" under {path}" if path else ""
@@ -436,6 +445,10 @@ def register(server: MCPServer, config: Config) -> None:
             listed += 1
         if hidden:
             answer.add(f"({_plural(hidden, 'file')} outside what this server serves not shown.)")
+        for blocked_path in sorted(blocked):
+            answer.add(
+                f"(`{blocked_path}` is also a folder of files this server doesn't serve: its diff is not shown.)"
+            )
         if listed < len(served):
             return answer.text(f"cut: {len(served) - listed} more files not listed — narrow with `path`")
         if unread:
@@ -443,14 +456,12 @@ def register(server: MCPServer, config: Config) -> None:
         if files_only:
             return answer.text()
         answer.add()
-        whole = path is None and r.matcher.takes_everything
-        batches = (
-            [None]
-            if whole
-            else [[c.path for c in served[i : i + PATCH_BATCH]] for i in range(0, len(served), PATCH_BATCH)]
-        )
+        shown = [c for c in served if c.path not in blocked]
+        batches = [shown] if whole else [shown[i : i + BATCH] for i in range(0, len(shown), BATCH)]
         for batch in batches:
-            out = r.patch(base, head, batch, answer.left)
+            if not batch:
+                continue
+            out = r.patch(base, head, batch, answer.left, whole=whole)
             for line in _lines(out.data):
                 if not answer.add(_cut_line(line)):
                     break
@@ -548,10 +559,17 @@ def register(server: MCPServer, config: Config) -> None:
         if start_line > total:
             raise ToolError(f"`{clean}` has {_plural(total, 'line')} at {at.describe()}; start_line is past its end")
         last = min(total, start_line + (max_lines or BLAME_LINES) - 1)
-        lines, commits = r.blame(at, clean, start_line, last)
+        lines, commits, stopped = r.blame(at, clean, start_line, last)
         width = len(str(last))
         head = f"{r.name} · blame {clean} · {at.describe()}"
-        body = Answer(room() - len(head) - 60)
+        stop = ""
+        if stopped:
+            stop = (
+                f"(Blame stops at {stopped[:12]}, where the file got its current name with changes: following it "
+                "further needs the contents of the files that commit deleted, which this mirror doesn't hold. Lines "
+                "shown at that commit are as old as it, or older — show_commit and log tell the rest.)\n"
+            )
+        body = Answer(room() - len(head) - len(stop) - 60)
         shown_to = start_line - 1
         current = None
         for line in lines:
@@ -571,7 +589,7 @@ def register(server: MCPServer, config: Config) -> None:
         if shown_to < total:
             more = "the answer is full" if body.full else "as asked" if max_lines else "a window at a time"
             note = f"lines {shown_to + 1}–{total} not shown ({more}) — call blame with start_line={shown_to + 1}"
-        return f"{head} · lines {start_line}–{shown_to} of {total}\n\n" + body.text(note)
+        return f"{head} · lines {start_line}–{shown_to} of {total}\n{stop}\n" + body.text(note)
 
     # --- read_guidance --------------------------------------------------------------------------------------------
 

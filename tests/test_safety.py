@@ -2,15 +2,20 @@
 removed: take the protection out, see the test fail, put it back.
 """
 
+import subprocess
 from pathlib import Path
 
 import pytest
 from conftest import ask, config_for
+from remotes import GitHTTP, blobs_in, make_remote
 from repos import git, write
 
 from repo_reader_mcp import git as git_module
+from repo_reader_mcp import mirror as mirror_module
 from repo_reader_mcp import repository
+from repo_reader_mcp.config import parse_config
 from repo_reader_mcp.git import GitError, command
+from repo_reader_mcp.mirror import Mirror, SyncError
 from repo_reader_mcp.repository import ReadError, check_ref
 
 pytestmark = pytest.mark.anyio
@@ -257,3 +262,305 @@ async def test_include_takes_only_what_it_names(shop):
     assert text.split("\n\n", 1)[1].split() == ["src/"]
     text, error = await ask(cfg, "read_file", repo="shop", path="README.md")
     assert error and "outside what this server serves" in text
+
+
+# --- remote repositories: what reaches a host, and how -----------------------------------------------------------
+
+TOKEN = "made-up-token-4f9a2c"
+
+
+@pytest.fixture
+def served(shop, tmp_path) -> Path:
+    """A folder of made-up remote repositories, to be served over HTTP on 127.0.0.1."""
+    make_remote(shop[0], tmp_path / "remotes" / "shop.git")
+    return tmp_path / "remotes"
+
+
+def remote_config(url: str, folder: Path, **settings):
+    data = {"repositories": [{"name": "shop", "url": url, **settings}], "mirrors": {"folder": str(folder)}}
+    return parse_config(data, folder.parent)
+
+
+@pytest.mark.parametrize("args", [["fetch", "origin"], ["ls-remote", "origin"], ["clone", "x"], ["config", "a", "b"]])
+def test_a_reading_command_can_t_reach_a_host(args):
+    with pytest.raises(GitError):
+        command("/nowhere", args)
+    line = command("/nowhere", ["log"])
+    assert "protocol.allow=never" in line and not any(part.endswith(".allow=always") for part in line)
+
+
+@pytest.mark.parametrize("args", [["push", "origin"], ["gc"], ["checkout", "main"], ["clone", "x"], ["remote", "add"]])
+def test_the_sync_runs_only_its_own_commands(args):
+    with pytest.raises(GitError):
+        git_module.maintain("/nowhere", args)
+
+
+async def test_reading_a_mirror_never_fetches(served, tmp_path, monkeypatch, shop):
+    """With the deliberate fetch taken away, a mirror's missing contents stay missing: the reading commands themselves
+    reach no host."""
+    cfg = remote_config(f"file://{served}/shop.git", tmp_path / "mirrors", refs=["main"])
+    mirror = Mirror(cfg.repositories[0])
+    mirror.sync()
+    old_cart = git(served / "shop.git", "rev-parse", f"{shop[1]['start']}:src/shop/cart.py")
+    assert old_cart not in blobs_in(mirror.git_dir)
+    monkeypatch.setattr(Mirror, "ensure", lambda self, wanted, git_dir=None: 0)
+    text, error = await ask(cfg, "read_file", repo="shop", path="src/shop/cart.py", ref=shop[1]["start"])
+    assert error and "reading never fetches them" in text
+    assert old_cart not in blobs_in(mirror.git_dir)
+
+
+async def test_a_token_travels_in_git_s_environment_only(served, tmp_path, monkeypatch, shop):
+    """The token reaches the host — and appears on no command line (which any user of the machine can read), in no
+    file of the mirror, in no answer."""
+    monkeypatch.setenv("ACME_TOKEN", TOKEN)
+    lines: list[str] = []
+    real = subprocess.Popen
+
+    def recording(args, *rest, **kwargs):
+        lines.extend(str(arg) for arg in args)
+        return real(args, *rest, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", recording)
+    with GitHTTP(served, token=TOKEN) as host:
+        cfg = remote_config(host.url("shop.git"), tmp_path / "mirrors", token_env="ACME_TOKEN", refs=["main"])
+        Mirror(cfg.repositories[0]).sync()
+        old, error = await ask(cfg, "read_file", repo="shop", path="src/shop/cart.py", ref=shop[1]["start"])
+        listing, _ = await ask(cfg, "list_repos")
+        assert host.seen and set(host.seen) == {host.expected}
+    assert not error and "class Cart" in old  # fetched on purpose, with the token
+    basic = host.expected.removeprefix("Basic ")
+    assert lines and not any(TOKEN in line or basic in line for line in lines)
+    for file in (tmp_path / "mirrors").rglob("*"):
+        if file.is_file():
+            data = file.read_bytes()
+            assert TOKEN.encode() not in data and basic.encode() not in data, file
+    assert TOKEN not in listing and basic not in listing
+
+
+async def test_the_token_goes_to_the_repository_s_host_only(served, tmp_path, monkeypatch):
+    """A host that sends git elsewhere (a redirect to another host) doesn't get the token sent along — not even when the
+    machine's git configuration says to follow that host's redirects."""
+    monkeypatch.setenv("ACME_TOKEN", TOKEN)
+    with GitHTTP(served) as elsewhere, GitHTTP(served, token=TOKEN) as host:
+        host.redirect_to = elsewhere.base
+        gitconfig = tmp_path / "gitconfig"  # the machine's configuration asks to follow redirects from that host
+        gitconfig.write_text(f'[http "{host.base}/"]\n\tfollowRedirects = true\n')
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
+        cfg = remote_config(host.url("shop.git"), tmp_path / "mirrors", token_env="ACME_TOKEN", refs=["main"])
+        with pytest.raises(SyncError) as failed:
+            Mirror(cfg.repositories[0]).sync()
+        assert host.seen  # the token went to its host
+        assert elsewhere.seen == []
+    assert "give `url` as the address it redirects to" in str(failed.value)
+
+
+def test_a_wrong_token_is_answered_by_no_other_credentials(served, tmp_path, monkeypatch):
+    """With a token configured, the credential helpers of the server's account are switched off — a refused token is
+    never followed by credentials stored for someone else, nor stored by a helper — and so are programs asking for a
+    password, which would run with the token in their environment."""
+    marker = tmp_path / "helper-ran"
+    asked = tmp_path / "askpass-ran"
+    askpass = tmp_path / "askpass"
+    askpass.write_text(f"#!/bin/sh\nenv > {asked}\necho made-up-password\n")
+    askpass.chmod(0o755)
+    gitconfig = tmp_path / "gitconfig"
+    gitconfig.write_text(f'[credential]\n\thelper = "!f() {{ touch {marker}; }}; f"\n[core]\n\taskPass = {askpass}\n')
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
+    monkeypatch.setenv("SSH_ASKPASS", str(askpass))
+    monkeypatch.setenv("ACME_TOKEN", "made-up-wrong-token")
+    with GitHTTP(served, token=TOKEN) as host:
+        cfg = remote_config(host.url("shop.git"), tmp_path / "mirrors", token_env="ACME_TOKEN")
+        with pytest.raises(SyncError) as failed:
+            Mirror(cfg.repositories[0]).sync()
+    assert "made-up-wrong-token" not in str(failed.value)
+    assert not marker.exists()
+    assert not asked.exists()  # a program asking for a password would have run with the token in its environment
+
+
+def test_an_error_never_carries_the_token(served, tmp_path, monkeypatch):
+    """Whatever git says, the token is taken out of it — in the error, and in the status every process reads."""
+    monkeypatch.setenv("ACME_TOKEN", TOKEN)
+    cfg = remote_config("https://example.com/acme/shop.git", tmp_path / "mirrors", token_env="ACME_TOKEN")
+    mirror = Mirror(cfg.repositories[0])
+    header = next(v for v in mirror.access().env.values() if v.startswith("Authorization: Basic "))
+    basic = header.removeprefix("Authorization: Basic ")
+
+    def leaky(git_dir, args, **kwargs):
+        raise GitError(f"fatal: header was Authorization: Basic {basic}; token {TOKEN}")
+
+    monkeypatch.setattr(mirror_module, "maintain", leaky)
+    with pytest.raises(SyncError) as failed:
+        mirror.sync()
+    assert TOKEN not in str(failed.value) and basic not in str(failed.value)
+    status = mirror.status_file.read_text()
+    assert TOKEN not in status and basic not in status and "***" in status
+
+
+def test_the_sync_reaches_a_host_only_by_its_url_s_protocol(served, tmp_path, monkeypatch):
+    """A URL rewritten on the way (`insteadOf` in the machine's configuration, a host's redirect) can't switch git to
+    another protocol — not even one the machine's configuration allows: only the configured URL's is."""
+    gitconfig = tmp_path / "gitconfig"
+    gitconfig.write_text(
+        f'[url "file://{served}/"]\n\tinsteadOf = http://127.0.0.1:9/\n[protocol "file"]\n\tallow = always\n'
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
+    cfg = remote_config("http://127.0.0.1:9/shop.git", tmp_path / "mirrors")
+    mirror = Mirror(cfg.repositories[0])
+    with pytest.raises(SyncError) as failed:
+        mirror.sync()
+    assert "transport 'file' not allowed" in str(failed.value)
+    assert not mirror.ready
+
+
+async def test_the_machine_s_configuration_can_t_let_reading_reach_a_host(served, tmp_path, monkeypatch, shop):
+    """`protocol.allow=never` is only a default: a `protocol.file.allow=always` in the machine's git configuration (a
+    common workaround) would win over it. Every protocol is refused by name, so reading still fetches nothing."""
+    gitconfig = tmp_path / "gitconfig"
+    gitconfig.write_text('[protocol "file"]\n\tallow = always\n')
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
+    cfg = remote_config(f"file://{served}/shop.git", tmp_path / "mirrors", refs=["main"])
+    mirror = Mirror(cfg.repositories[0])
+    mirror.sync()
+    old_cart = git(served / "shop.git", "rev-parse", f"{shop[1]['start']}:src/shop/cart.py")
+    monkeypatch.setattr(Mirror, "ensure", lambda self, wanted, git_dir=None: 0)
+    text, error = await ask(cfg, "read_file", repo="shop", path="src/shop/cart.py", ref=shop[1]["start"])
+    assert error and old_cart not in blobs_in(mirror.git_dir)
+    # Each of the two layers holds alone. The command line: every protocol refused by name, with no help from the
+    # environment.
+    line = command(str(mirror.git_dir), ["cat-file", "blob", old_cart])
+    done = subprocess.run(line, env=git_module.environment(), capture_output=True, check=False)
+    assert done.returncode != 0 and old_cart not in blobs_in(mirror.git_dir)
+    # The environment: GIT_NO_LAZY_FETCH, which git 2.44 and later (and patched older ones) obey whatever the
+    # configuration says.
+    seen: list[dict] = []
+    real = subprocess.Popen
+
+    def recording(args, *rest, **kwargs):
+        seen.append(kwargs.get("env") or {})
+        return real(args, *rest, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", recording)
+    git_module.run(str(mirror.git_dir), ["rev-parse", "HEAD"])
+    assert seen and seen[-1].get("GIT_NO_LAZY_FETCH") == "1"
+
+
+def test_no_hook_of_the_machine_runs_during_a_sync(served, tmp_path, monkeypatch):
+    """A `reference-transaction` hook the machine's configuration names would run on every ref the sync moves — with
+    the token in its environment."""
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    ran = tmp_path / "hook-ran"
+    hook = hooks / "reference-transaction"
+    hook.write_text(f"#!/bin/sh\nenv > {ran}\n")
+    hook.chmod(0o755)
+    gitconfig = tmp_path / "gitconfig"
+    gitconfig.write_text(f"[core]\n\thooksPath = {hooks}\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
+    monkeypatch.setenv("ACME_TOKEN", TOKEN)
+    with GitHTTP(served, token=TOKEN) as host:
+        cfg = remote_config(host.url("shop.git"), tmp_path / "mirrors", token_env="ACME_TOKEN")
+        Mirror(cfg.repositories[0]).sync()
+    assert not ran.exists()
+
+
+async def test_a_diff_never_shows_a_folder_that_replaced_a_served_file(tmp_path):
+    """A served file `config` replaced by a folder `config/` holding an excluded file: git, given the path `config`,
+    takes the folder's files too. The excluded file's contents never show — nor reach a mirror."""
+    source = tmp_path / "source"
+    source.mkdir()
+    git(source, "init", "-q", "-b", "main")
+    write(source, "config", "served-file\n")
+    write(source, "README.md", "hi\n")
+    git(source, "add", "-A")
+    git(source, "commit", "-q", "-m", "One", date="2026-04-01T10:00:00+00:00")
+    git(source, "rm", "-q", "config")
+    write(source, "config/prod.env", "API_KEY=made-up-top-secret\n")
+    write(source, "config/app.yml", "port: 8080\n")
+    git(source, "add", "-A")
+    git(source, "commit", "-q", "-m", "Two", date="2026-04-02T10:00:00+00:00")
+    remote = make_remote(source, tmp_path / "remotes" / "app.git")
+    mirrored = remote_config(f"file://{remote}", tmp_path / "mirrors", exclude=["*.env"])
+    mirror = Mirror(mirrored.repositories[0])
+    mirror.sync()
+    for cfg in (config_for(source, exclude=["*.env"]), mirrored):
+        for tool, arguments in [("show_commit", {"commit": "main"}), ("diff", {"base": "main~1"})]:
+            text, error = await ask(cfg, tool, repo="shop", **arguments)
+            assert not error, (tool, text)
+            assert "made-up-top-secret" not in text and "prod.env" not in text, text
+            assert "+port: 8080" in text and "`config` is also a folder of files this server doesn't serve" in text
+    assert git(remote, "rev-parse", "main:config/prod.env") not in blobs_in(mirror.git_dir)
+    # Below the tools, too: a diff asked for `config` keeps the section of `config` alone.
+    local = repository.Repository(config_for(source).repositories[0])
+    out = local.patch("main~1", "main", [repository.Change("D", "config")], 100_000)
+    assert b"served-file" in out.data and b"made-up-top-secret" not in out.data and b"app.yml" not in out.data
+
+
+async def test_a_diff_shows_files_with_unusual_names(tmp_path):
+    """The diff keeps the sections of the files asked for, however git writes their names (quoted, escaped)."""
+    source = tmp_path / "source"
+    source.mkdir()
+    git(source, "init", "-q", "-b", "main")
+    names = ["notes/план.md", 'odd "quoted" name.txt', "back\\slash.txt", "with space.txt"]
+    for name in names:
+        write(source, name, "one\n")
+    write(source, "secret.env", "x\n")
+    git(source, "add", "-A")
+    git(source, "commit", "-q", "-m", "One", date="2026-04-01T10:00:00+00:00")
+    for name in names:
+        write(source, name, "two\n")
+    git(source, "commit", "-q", "-am", "Two", date="2026-04-02T10:00:00+00:00")
+    text, error = await ask(config_for(source, exclude=["*.env"]), "show_commit", repo="shop", commit="main")
+    assert not error and text.count("+two") == len(names), text
+
+
+async def test_a_contents_id_tells_nothing_as_a_ref(served, tmp_path, shop):
+    """A file's id is its contents' digest. Given as a ref, the id of contents the mirror lacks (an excluded file's)
+    answers as an unknown name does — so an agent can't confirm contents it guessed."""
+    cfg = remote_config(f"file://{served}/shop.git", tmp_path / "mirrors", exclude=["secrets"])
+    Mirror(cfg.repositories[0]).sync()
+    secret = git(served / "shop.git", "rev-parse", f"{shop[1]['settings']}:secrets/prod.env")
+    made_up = "0123456789abcdef0123456789abcdef01234567"
+    known, _ = await ask(cfg, "read_file", repo="shop", path="README.md", ref=secret)
+    unknown, _ = await ask(cfg, "read_file", repo="shop", path="README.md", ref=made_up)
+    assert known.replace(secret, "X") == unknown.replace(made_up, "X")
+
+
+def test_a_tag_of_a_folder_or_of_a_file_s_contents_is_not_kept(served, tmp_path, shop, monkeypatch):
+    """A tag can name a folder (a tree) or a file's contents instead of a commit. Its paths are not the repository's
+    — include / exclude could not judge them — so the mirror doesn't keep it, nor fetch the folder's contents."""
+    remote = served / "shop.git"
+    git(remote, "tag", "a-folder", f"{shop[1]['settings']}^{{tree}}")
+    git(remote, "tag", "a-file", f"{shop[1]['settings']}:README.md")
+    cfg = remote_config(f"file://{remote}", tmp_path / "mirrors", exclude=["secrets"])
+    mirror = Mirror(cfg.repositories[0])
+    mirror.sync()
+    kept = git(mirror.git_dir, "for-each-ref", "--format=%(refname)")
+    assert "refs/tags/a-folder" not in kept and "refs/tags/a-file" not in kept and "refs/tags/v0.1" in kept
+    secret = git(remote, "rev-parse", f"{shop[1]['settings']}:secrets/prod.env")
+    assert secret not in blobs_in(mirror.git_dir)
+    commands: list[str] = []
+    real = mirror_module.maintain
+
+    def recording(git_dir, args, **kwargs):
+        commands.append(args[0])
+        return real(git_dir, args, **kwargs)
+
+    monkeypatch.setattr(mirror_module, "maintain", recording)
+    assert mirror.sync() == "up to date" and "fetch" not in commands  # dropped once, not fetched on every sync
+    monkeypatch.setattr(mirror_module, "maintain", real)
+    # And the files of what the sync reads are always listed from a commit's root — never from inside a folder.
+    folder = git(remote, "rev-parse", f"{shop[1]['settings']}^{{tree}}")
+    assert mirror._served_at(mirror.git_dir, [folder]) == []
+
+
+def test_two_configurations_never_share_a_mirror(tmp_path):
+    """Two servers on one machine (a shared cache folder), or one configuration changed, get mirrors of their own: a
+    mirror never holds branches or contents another configuration took."""
+
+    def folder(**settings) -> str:
+        return (
+            remote_config("https://example.com/acme/shop.git", tmp_path / "mirrors", **settings).repositories[0].git_dir
+        )
+
+    assert folder() == folder()
+    assert len({folder(), folder(refs=["main"]), folder(exclude=["secrets"]), folder(include=["src"])}) == 4

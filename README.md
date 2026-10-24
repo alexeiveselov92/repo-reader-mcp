@@ -4,9 +4,10 @@ A read-only [MCP](https://modelcontextprotocol.io) server that lets any AI agent
 in git repositories — files at any branch, tag or commit, the history, diffs, blame and search across
 many repositories — without ever changing them.
 
-> **Status: pre-alpha.** It reads local repositories today — any branch, tag or commit, history, diffs, blame —
-> from a clone of this source ([getting started](docs/getting-started.md)). Remote repositories, search and a
-> published package are next: the plan is in [dev/PLAN.md](dev/PLAN.md), the design in [dev/DESIGN.md](dev/DESIGN.md).
+> **Status: pre-alpha.** It reads local repositories, and remote ones it mirrors from any git host — any branch, tag
+> or commit, history, diffs, blame — from a clone of this source ([getting started](docs/getting-started.md)). Groups
+> of repositories, a shared server over HTTP, search and a published package are next: the plan is in
+> [dev/PLAN.md](dev/PLAN.md), the design in [dev/DESIGN.md](dev/DESIGN.md).
 
 ## Why
 
@@ -45,6 +46,7 @@ uv sync
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
 uv run repo-reader-mcp --config my-config.yaml --check                 # check a configuration
+uv run repo-reader-mcp --config my-config.yaml --sync                  # bring the mirrors up to date once
 uv run repo-reader-mcp --config my-config.yaml                         # the server over stdio
 ```
 

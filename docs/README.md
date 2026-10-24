@@ -9,6 +9,8 @@ How the project is built and planned is not here: that is `dev/` (design, plan, 
 
 - [Getting started](getting-started.md) — run it from a clone, say which repositories it reads, connect it to an agent,
   ask.
+- [Remote repositories](remote-repositories.md) — repositories on GitHub, GitLab or any git server: mirrors, what they
+  hold, how they stay fresh, tokens per host.
 - **Reference**
   - [Tools](reference/tools.md) — every tool, its inputs and its answer.
   - [Configuration](reference/configuration.md) — the file, every key, the patterns of `include` / `exclude`, limits.
@@ -16,8 +18,8 @@ How the project is built and planned is not here: that is `dev/` (design, plan, 
     `CLAUDE.md`, rules, skills) and what the configuration adds; how they reach an agent.
   - [Safety](reference/safety.md) — what it never does, and what it doesn't do yet.
 
-Planned, each written with the change that makes it true: remote repositories and running it for a team (Streamable
-HTTP, a container); search and grep; a contributing page.
+Planned, each written with the change that makes it true: groups of repositories and running it for a team
+(Streamable HTTP, a container); search and grep; a contributing page.
 
 Three readers: people who use it through their agent (getting started, guides), people who run it (guides,
 reference), people who contribute (a contributing page). A page is written in the same commit as the change that makes

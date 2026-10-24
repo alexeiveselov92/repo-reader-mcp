@@ -29,9 +29,36 @@ repositories:
 
 - **Local repositories** (`path`, built in milestone 1): a checkout or a bare repository, read through its git
   directory. Relative paths are taken from the configuration file's folder.
-- **Remote repositories are mirrored** (milestone 2): a bare partial clone (`--filter=blob:none`) in the server's own
-  data folder — commits and trees of the whole history, and only the file contents a tool reads or the search index
-  needs. A mirror is a local repository the server made, so every reading tool works on it unchanged.
+- **Remote repositories are mirrored** (milestone 2, built 2026-10-24 — `src/repo_reader_mcp/mirror.py`): a bare
+  partial clone (`--filter=blob:none`) in `mirrors.folder` (default `~/.cache/repo-reader-mcp`), named
+  `<name>-<digest of the URL>.git` — commits and trees of the whole history of the kept refs, and the contents of
+  served paths only. A mirror is a local repository the server made, so every reading tool works on it unchanged.
+  - **The sync** (`Mirror.sync`, at start and every `mirrors.every_minutes`, four mirrors at once): `ls-remote`; fetch
+    the refs that moved by explicit refspecs on stdin (`+` follows force-pushes, `--atomic`, `--no-tags`,
+    `--recurse-submodules=no`); delete the refs gone or no longer kept (`update-ref --stdin`); point HEAD at the host's
+    default branch (a host whose HEAD is a commit: the branch at it); fetch the served contents at the tips that moved
+    (and the default branch's), listing files from a commit's root. Tags of a tree or a blob are dropped once fetched
+    and remembered in the status, so they aren't fetched again. A first sync builds
+    in `<name>-<digest>.new` and renames it into place when complete — a mirror exists whole or not at all. One writer
+    per mirror: a thread lock and `flock` on `<name>-<digest>.lock`. The outcome is written to
+    `<name>-<digest>.status.json` so every server process sharing the folder can tell it (`list_repos`).
+  - **Contents on purpose** (`Mirror.ensure`): before a command that reads contents (`cat-file`, `numstat`, `diff -p`,
+    `blame`), the repository asks the mirror for the (object, path) pairs it needs; the mirror drops paths outside
+    include / exclude, finds the missing ones with `rev-list --objects --no-walk --ignore-missing --missing=print
+    --stdin` (which never fetches), and fetches exactly those (`fetch --stdin origin <ids>`, negotiation `noop`). A diff
+    counts lines of served files only, by path, so git never wants an excluded file's contents; a served file replaced
+    by a folder of unserved files is left out of the pathspecs (git takes a path as a folder too), and a patch keeps
+    only the sections of the files asked for. Blame takes the file's history with `log --follow -M100% --raw` (exact
+    renames, found by id, need no contents; gitlinks left out); where git still wants contents — the files deleted in
+    the commit where the file appeared, to follow a rename with changes — the mirror fetches those when all are served,
+    asks git where the file came from (`log -1 --follow`), and goes on from there (up to 8 hops). Where one isn't
+    served, blame reruns as `<that commit>..<ref>` and says it stopped there.
+  - **Tokens** by variable name, given to git through `GIT_CONFIG_COUNT`: `credential.helper=` (reset),
+    `core.askPass=` (off), `http.<the repository's URL>.followRedirects=false` (the closest match, which the machine's
+    configuration can't override), `http.<scheme://host/>.extraHeader: Authorization: Basic …`; https only (plain http
+    to the loopback only). No redirect with a
+    token: git keeps an extra header chosen at the start for every request, wherever a redirect sends them (found by a
+    test, 2026-10-24). Without a token, git uses the server account's setup (ssh keys, a credential helper).
 - **Groups** (milestone 2): `github: owner/prefix-*` (and GitLab's groups) — resolved from the host's listing on every
   sync: a new repository joins, an archived one leaves; `skip` takes names or patterns out (a pattern catches more than
   wanted). Each member is named by its own repository name; the entry's settings (token, `include` / `exclude`,
@@ -140,15 +167,32 @@ The public account is `docs/reference/safety.md`; each protection has a test tha
   from the commit there, so a driver the attributes name is in force (a checkout read through its git directory has no
   working files to take them from) — found 2026-10-24; the test's trap repository is bare for that reason.
 - **No accidental downloads.** `protocol.allow=never` on every reading command: a partial clone never fetches behind
-  the server's back. In milestone 2 contents are fetched on purpose and in bulk by the sync, never by a reading
-  command. Rename detection (which fetches on a partial clone) is off: `--no-renames`.
+  the server's back. Contents are fetched on purpose — by the sync, and by `Mirror.ensure` before a read — never by a
+  reading command, and only for served paths (checked in `ensure` itself, whoever calls it). Rename detection (which
+  fetches on a partial clone) is off: `--no-renames`, except blame's own following and `log --follow -M100%`, which
+  find renames by object id and read no contents.
+- **Nothing from a commit's own files**: `attr.tree` is the empty tree and `mailmap.blob` empty on every call. A bare
+  repository (a mirror) reads `.gitattributes` and `.mailmap` from HEAD — files the repository's authors write, which a
+  mirror may not hold (found 2026-10-24: a diff failed on a mirror whose `include` left `.gitattributes` out; the
+  refuting review found every tool failing when it left `.mailmap` out). No hooks: `core.hooksPath` is the null
+  device (the sync's ref updates would run a `reference-transaction` hook of the machine's, with the token in its
+  environment).
+- **Each protocol refused by name**: `protocol.allow=never` is a default that a `protocol.file.allow=always` in the
+  machine's configuration overrides, so every known protocol gets its own `never`, and reading runs with
+  `GIT_NO_LAZY_FETCH=1` (git 2.44+, and patched older ones). Two layers, each tested alone.
+- **A mirror per configuration**: its folder's digest covers the URL, `refs`, `include` and `exclude`.
+- **The sync's own command set** (`git.maintain`): `init`, `config`, `ls-remote`, `fetch`, `update-ref`,
+  `symbolic-ref`, `for-each-ref`, `ls-tree`, `rev-list`; only `ls-remote` and `fetch` reach a host, by the URL's own
+  protocol alone (`protocol.allow=never` plus `protocol.<it>.allow=always`) — an `insteadOf` can't switch it. URLs
+  with credentials and remote helpers (`ext::`) are refused in the configuration.
 - **The environment can't redirect git**: every inherited `GIT_*` variable is dropped but the three naming which
   configuration files to read.
 - **Secrets**: files named for credentials are never fetched; contents are scanned (gitleaks rules plus
   rules for passwords written as prose) and a found value is hidden before an agent sees the file (milestone 4; until
   then `exclude`, and the docs say so).
-- **Tokens** travel in git's environment only — never a command line, a remote URL or a mirror's config;
-  error messages are scrubbed of them.
+- **Tokens** travel in git's environment only — never a command line, a remote URL, a mirror's files or its status;
+  error messages are scrubbed of them (the token, `user:token`, its base64). With a token, no redirect is followed and
+  the account's credential helpers are off.
 - **Sizes**: every answer is capped (clients cut long answers — Claude Code near 25,000 tokens); a cut
   answer says so and how to narrow. Git's output is read up to a byte cap (4 MB; a file 10 MB) and the command
   stopped there; every parser drops a record the cap cut through, and the answer says it is partial.
