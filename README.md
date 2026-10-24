@@ -5,7 +5,7 @@ in git repositories — files at any branch, tag or commit, the history, diffs, 
 many repositories — without ever changing them.
 
 > **Status: pre-alpha, being designed.** Nothing here is ready to use yet. The plan is in
-> [docs/PLAN.md](docs/PLAN.md), the design in [docs/DESIGN.md](docs/DESIGN.md).
+> [dev/PLAN.md](dev/PLAN.md), the design in [dev/DESIGN.md](dev/DESIGN.md).
 
 ## Why
 

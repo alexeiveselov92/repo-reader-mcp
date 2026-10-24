@@ -2,7 +2,7 @@
 
 A read-only MCP server for code in git repositories: files at any ref, history, diffs, blame, search —
 for any MCP client and any code host. Open source (Apache-2.0), the author's own project. Its sibling,
-`warehouse-mcp` (databases with a semantic layer), is a separate repository with the same rules.
+`semantic-warehouse-mcp` (databases with a semantic layer), is a separate repository with the same rules.
 
 **Language rule.** The author talks to Claude in Russian — reply in Russian. **Everything written to the
 repository is in English**: code, comments, docs, commit messages.
@@ -19,8 +19,8 @@ repository is in English**: code, comments, docs, commit messages.
 ## What a session reads
 
 At the start (`/start` does it): `STATE.md` — where we are; the current milestone's section of
-`docs/PLAN.md`. When relevant, by section: `docs/DESIGN.md` (how it works), `docs/DECISIONS.md` (what is
-decided, grep it), `docs/RESEARCH.md` (what exists, lessons carried).
+`dev/PLAN.md`. When relevant, by section: `dev/DESIGN.md` (how it works), `dev/DECISIONS.md` (what is
+decided, grep it), `dev/RESEARCH.md` (what exists, lessons carried).
 
 ## Who the author is
 
@@ -36,12 +36,15 @@ person-day estimates — sessions. Every session ends with something visible.
   repository is the public's: nothing private ever enters it — no tokens, no company code, no output of a
   real repository.
 - **Read-only, by construction.** No tool writes to a repository or a host; no shell; commands from a fixed
-  set with allow-listed flags; paths stay inside the repository (`docs/DESIGN.md`, "Safety").
+  set with allow-listed flags; paths stay inside the repository (`dev/DESIGN.md`, "Safety").
 - **Secrets by name.** The configuration names the variable that holds a token; the value never appears in a
   file, a log, an answer or an error.
 - **Any client.** Nothing that assumes one vendor's client; stdio and Streamable HTTP; tool annotations
   (`read_only_hint`, `destructive_hint`) on every tool; answers capped.
-- **Written fresh.** The author's earlier company platform informs the design (`docs/RESEARCH.md`); its code
+- **`docs/` is the public documentation** — the source of the project's site. A change that alters what a user
+  sees or does updates its page in the same commit. Design, plans, decisions and research live in `dev/`, never on the
+  site.
+- **Written fresh.** The author's earlier company platform informs the design (`dev/RESEARCH.md`); its code
   is not copied here.
 
 ## Quality
@@ -55,10 +58,10 @@ person-day estimates — sessions. Every session ends with something visible.
 
 `/start` at the beginning, `/close` at the end.
 
-1. Read `STATE.md` and the current milestone in `docs/PLAN.md`; agree the session's plan in one paragraph.
+1. Read `STATE.md` and the current milestone in `dev/PLAN.md`; agree the session's plan in one paragraph.
 2. Do it; show the result (a real agent's answer, numbers).
 3. **Rewrite `STATE.md` entirely** (not append; under 100 lines); one line per change in `CHANGELOG.md`;
-   decisions in `docs/DECISIONS.md`; progress marked in `docs/PLAN.md`.
+   decisions in `dev/DECISIONS.md`; progress marked in `dev/PLAN.md`.
 4. Commit; ask about pushing — the author works from several computers.
 
 **All context lives in this repository — nothing in Claude's local memory** (the author's rule).

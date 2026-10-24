@@ -1,4 +1,4 @@
-"""The MCP server. Every tool is read-only and says so (docs/DESIGN.md, "Safety")."""
+"""The MCP server. Every tool is read-only and says so (dev/DESIGN.md, "Safety")."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""repo-reader-mcp — a read-only MCP server for code in git repositories (docs/DESIGN.md)."""
+"""repo-reader-mcp — a read-only MCP server for code in git repositories (dev/DESIGN.md)."""
 
 from importlib.metadata import PackageNotFoundError, version
 

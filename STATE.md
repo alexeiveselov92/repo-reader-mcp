@@ -4,12 +4,13 @@
 
 **Updated:** 24 October 2026.
 
-**Current milestone: 1 — one local repository, read-only** (`docs/PLAN.md`). Milestone 0 (groundwork) is done.
+**Current milestone: 1 — one local repository, read-only** (`dev/PLAN.md`). Milestone 0 (groundwork) is done.
 
 ## What exists
 
-- The repository (public, Apache-2.0), README, `docs/DESIGN.md`, `docs/DECISIONS.md`, `docs/RESEARCH.md`,
-  `docs/PLAN.md`, the session flow (`CLAUDE.md`, `/start`, `/close`).
+- The repository (public, Apache-2.0), README; `dev/` — design, plan, decisions, research; `docs/` — the public
+  documentation's source (the site comes in a later milestone, hosted through the author's pipelab); the session
+  flow (`CLAUDE.md`, `/start`, `/close`).
 - A skeleton: the server over stdio (`uv run repo-reader-mcp`) with one tool, `about`; its tests through the
   SDK's in-process client (every tool read-only; `about` answers); ruff; CI on GitHub Actions.
 - A draft of the configuration: `examples/config.example.yaml`.
@@ -28,4 +29,4 @@ Nothing blocks milestone 1. Open Claude Code in this repository's folder and run
 
 - Don't write a real company, product, repository or path anywhere here — the repository is public.
 - Don't add a tool without `read_only_hint=True`, `destructive_hint=False` (a test refuses it).
-- Don't run git commands that fetch contents on a partial mirror by accident (`docs/DESIGN.md`, "Safety").
+- Don't run git commands that fetch contents on a partial mirror by accident (`dev/DESIGN.md`, "Safety").

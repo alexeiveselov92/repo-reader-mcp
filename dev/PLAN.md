@@ -32,7 +32,14 @@ with something visible: a real agent answering through the server.
 - [ ] A refuting review of the safety (a second reader whose job is to break it); every protection with a
       test that fails when it is removed.
 
-## Milestone 4. Release — 1 session
+## Milestone 4. The site and the author's server — 1 session
+
+- [ ] `website/` — Astro + Starlight built from `docs/` (detectkit's pattern), its image on GHCR, CI sending
+      `repository_dispatch` to `alexeiveselov92/pipelab`.
+- [ ] In pipelab: the site at `repo-reader.pipelab.dev` and an instance of the server (its image, `/mcp` with no
+      redirect), each with its `deploy-*.yml`; secrets prefixed in GitHub.
+
+## Milestone 5. Release — 1 session
 
 - [ ] Published on PyPI (`uvx repo-reader-mcp`), a container image, docs for agents and for people who
       run it; a versioned release.
