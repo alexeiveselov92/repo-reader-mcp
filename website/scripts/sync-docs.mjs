@@ -8,8 +8,8 @@
  *     the repository (`../dev/PLAN.md`) to the file on GitHub.
  *
  * Every Markdown page under `docs/` must be listed below: a page the site doesn't carry stops the build — the guide on
- * the web is the whole guide. The output folder (src/content/docs) is made again on every run and not committed; the
- * landing page comes from src/landing.mdx.
+ * the web is the whole guide. The output folder (src/content/docs) is made again on every run and not committed. The
+ * landing page at `/` is not one of these pages: it is src/pages/index.astro, a page of its own outside Starlight.
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -101,8 +101,7 @@ async function main() {
     await fs.mkdir(path.dirname(dest), { recursive: true });
     await fs.writeFile(dest, front + relink(body, page.src).replace(/^\n+/, ''), 'utf8');
   }
-  await fs.copyFile(path.join(WEBSITE, 'src', 'landing.mdx'), path.join(OUT, 'index.mdx'));
-  console.log(`sync-docs: ${PAGES.length} pages and the landing page${warnings ? ` (${warnings} warning(s))` : ''}`);
+  console.log(`sync-docs: ${PAGES.length} pages${warnings ? ` (${warnings} warning(s))` : ''}`);
 }
 
 main().catch((error) => {

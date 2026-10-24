@@ -240,7 +240,8 @@ the MCP Inspector (the TypeScript SDK's client), over stdio and HTTP.
   Starlight (`website/`, built 2026-10-24 on the pattern of the author's detectkit: `scripts/sync-docs.mjs` imports
   `docs/` and the changelog at build time — titles from each page's H1, links between pages rewritten to routes, links
   to other files of the repository to GitHub, an "edit" link per page; a page of `docs/` it doesn't list stops the
-  build, and `tests/test_docs.py` checks the same; the landing page is `website/src/landing.mdx`), served by nginx
+  build, and `tests/test_docs.py` checks the same; the landing page is `website/src/pages/index.astro` — a standalone page with its own styles, on the pattern of
+  detectkit's: a hero with a real exchange, sections showing what the tools actually print, made-up data only), served by nginx
   from an image (`website/Dockerfile`, pushed to GHCR by `.github/workflows/website.yml`, which then sends
   `repository_dispatch: repo-reader-mcp-updated` to pipelab) at `repo-reader.pipelab.dev`.
 - **Distribution**: the package on PyPI (`uvx repo-reader-mcp`); a container image on GHCR

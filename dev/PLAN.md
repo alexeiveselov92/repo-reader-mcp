@@ -50,9 +50,9 @@ with something visible: a real agent answering through the server.
 - [x] A refuting review of the safety (a second reader whose job is to break it); every protection with a
       test that fails when it is removed (2026-10-24: 11 findings, all closed).
 
-## Milestone 5. The site's landing page — 1 session
+## Milestone 5. The site's landing page — ✅ 2026-10-24
 
-- [ ] A landing page like the author's detectkit site (`../detectkit/website/src/pages/index.astro`): a hero that says
+- [x] A landing page like the author's detectkit site (`../detectkit/website/src/pages/index.astro`): a hero that says
       what it is and shows it working, the sections a visitor scans (what it reads, safety, any host, any client), the
       docs one click away — without detectkit's interactive UI. Built from facts the guide states; no made-up claims.
 

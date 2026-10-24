@@ -1,0 +1,31 @@
+---
+// The mark of repo-reader-mcp — the favicon's (public/favicon.svg): an "R" whose stem ends in a commit, on a dark
+// tile. A hairline ring keeps the tile's edge visible on a dark page. Decorative: the name always stands beside it.
+interface Props {
+  size?: number;
+  class?: string;
+}
+const { size = 28, class: className } = Astro.props;
+---
+
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 32 32"
+  class={className}
+  aria-hidden="true"
+  focusable="false"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <rect width="32" height="32" rx="7" fill="#1f2937"></rect>
+  <rect x="0.5" y="0.5" width="31" height="31" rx="6.5" fill="none" stroke="#ffffff" stroke-opacity="0.1"></rect>
+  <path
+    d="M9 8h9a5 5 0 0 1 0 10h-3l5 6"
+    fill="none"
+    stroke="#f9fafb"
+    stroke-width="2.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"></path>
+  <path d="M9 8v13.5" stroke="#f9fafb" stroke-width="2.6" stroke-linecap="round"></path>
+  <circle cx="9" cy="24" r="2.2" fill="#34d399"></circle>
+</svg>

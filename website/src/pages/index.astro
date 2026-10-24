@@ -1,0 +1,662 @@
+---
+/*
+ * The landing page — a page of its own, outside Starlight (the guide's pages are Starlight's, synced from docs/).
+ * Static: no script but the line that follows the theme chosen in the guide. Every answer shown in a panel is what the
+ * server prints for made-up repositories (acme, shop) — keep them true when an answer's shape changes.
+ */
+import Logo from '../components/Logo.astro';
+import Term from '../components/Term.astro';
+import { answer, call, check, shell, yaml } from '../utils/paint';
+import '../styles/landing.css';
+
+const repo = 'https://github.com/alexeiveselov92/repo-reader-mcp';
+const site = 'https://repo-reader.pipelab.dev/';
+const start = '/getting-started/';
+const title = 'repo-reader-mcp — let agents read the code, never change it';
+const description =
+  'A read-only MCP server that lets any AI agent read code in git repositories — any branch, tag or commit, with its history — and never changes them.';
+
+// ---- the hero: an agent asks who wrote a piece of code and why ----
+const heroBlame = answer(`shop-backend · blame src/payments/client.py · main @ ef0faefaafd1 (2026-10-22) · lines 18–24 of 24
+
+82822bb8dbc0 2026-08-10 Sam Ortiz — Add the payments client and the cart
+18\t    def capture(self, order):
+47976fdfd726 2026-09-03 Dana Reyes — Retry card captures on gateway timeouts
+19\t        for attempt in range(MAX_RETRIES):
+20\t            try:
+21\t                return self.gateway.capture(order.id, order.total_cents)
+22\t            except GatewayTimeout:
+23\t                sleep(backoff(attempt))
+24\t        raise GatewayTimeout(order.id)`);
+
+// ---- history ----
+const readAtTag =
+  call('read_file', { repo: 'shop-backend', ref: 'v2.3.0', path: 'src/payments/client.py', start_line: 6 }) +
+  answer(`
+shop-backend · src/payments/client.py · v2.3.0 @ 82822bb8dbc0 (2026-08-10) · lines 6–11 of 11
+
+ 6\tclass PaymentsClient:
+ 7\t    def __init__(self, gateway: Gateway):
+ 8\t        self.gateway = gateway
+ 9\t
+10\t    def capture(self, order):
+11\t        return self.gateway.capture(order.id, order.total_cents)`);
+
+const logOfPath =
+  call('log', { repo: 'shop-backend', path: 'src/payments/client.py' }) +
+  answer(`
+shop-backend · log of src/payments/client.py · main @ ef0faefaafd1 (2026-10-22) — newest first
+
+47976fdfd726  2026-09-03  Dana Reyes  Retry card captures on gateway timeouts
+82822bb8dbc0  2026-08-10  Sam Ortiz  Add the payments client and the cart`);
+
+const diffSinceFork =
+  call('diff', { repo: 'shop-backend', base: 'main', head: 'feature/refunds', since_fork: true, files_only: true }) +
+  answer(`
+shop-backend · diff main @ ef0faefaafd1 (2026-10-22) → feature/refunds @ 65a2fa69f919 (2026-10-21) · from their merge base 47976fdfd726
+
+1 file changed, +5 −0:
+  A  src/payments/refunds.py  +5`);
+
+const showCommit =
+  call('show_commit', { repo: 'shop-backend', commit: '47976fdfd726', files_only: true }) +
+  answer(`
+shop-backend · commit 47976fdfd726
+Author: Dana Reyes, 2026-09-03T14:20:00+00:00
+Parent: 82822bb8dbc0
+
+    Retry card captures on gateway timeouts
+
+    The gateway times out under load; a capture retried with backoff succeeds.
+
+1 file changed, +14 −1:
+  M  src/payments/client.py  +14 −1`);
+
+// ---- search ----
+const searchAll =
+  call('search', { pattern: 'currency' }) +
+  answer(`
+\`currency\` in 2 repositories (their default branches): 2 lines in 2 files of 2 repositories — at most 5 lines a file.
+
+## shop-backend · main @ ef0faefaafd1 (2026-10-22)
+config/settings.yml
+  1: currency: EUR
+
+## shop-frontend · main @ 6c7ad6d53a56 (2026-10-01)
+src/format/money.ts
+  1: export const currency = 'EUR';`);
+
+const grepAtTag =
+  call('grep', { repo: 'shop-backend', ref: 'v2.3.0', pattern: 'total_cents', context: 1 }) +
+  answer(`
+shop-backend · grep \`total_cents\` · v2.3.0 @ 82822bb8dbc0 (2026-08-10) — 1 matching line in 1 file
+
+src/payments/client.py
+  10-     def capture(self, order):
+  11:         return self.gateway.capture(order.id, order.total_cents)`);
+
+// ---- remote repositories and groups ----
+const remoteConfig = yaml(`repositories:
+  - github: acme/shop-*      # every repository named shop-…
+    token_env: GITHUB_TOKEN  # holds a read-only token
+    skip: [shop-sandbox]     # names or patterns left out
+    description: One of the shop's services.
+    exclude: ["**/fixtures/**", "*.pem"]
+
+  - url: https://gitlab.example.com/acme/billing.git
+    token_env: GITLAB_TOKEN
+    token_user: oauth2
+    refs: [main, "release/*"]   # the branches and tags kept
+
+mirrors:
+  folder: /var/lib/repo-reader-mcp
+  every_minutes: 10`);
+
+const remoteCheck =
+  shell('$ uv run repo-reader-mcp --config config.yaml --check') +
+  check(`…
+  github: acme/shop-*  https://github.com
+    the host lists 2 repositories it takes:
+    shop-api  acme/shop-api  (mirror made)
+    shop-web  acme/shop-web  (not mirrored yet)
+    left out: acme/shop-old: archived
+    left out: acme/shop-sandbox: skipped`);
+
+const remoteList =
+  call('list_repos') +
+  answer(`
+## shop-api
+One of the shop's services. — The shop's public API.
+Mirrored from https://github.com/acme/shop-api.git (one of \`github: acme/shop-*\`), synced 2026-10-24 10:30 UTC.`);
+
+// ---- safety ----
+const secretsHidden =
+  call('read_file', { repo: 'shop-backend', path: 'config/deploy.yml' }) +
+  answer(`
+shop-backend · config/deploy.yml · main @ ef0faefaafd1 (2026-10-22) · lines 1–4 of 4
+
+1\tdeploy:
+2\t  host: shop.example.com
+3\t  github_token: "[hidden: GitHub token]"
+4\t  database: postgres://shop:[hidden: password]@db.example.com/shop
+
+[2 values that look like secrets are hidden as \`[hidden: …]\` — this server never shows them.]`);
+
+const credentialRefused =
+  call('read_file', { repo: 'shop-backend', path: '.env' }) +
+  answer(`
+\`.env\` is outside what this server serves from shop-backend (its include / exclude)`);
+
+// ---- guidance ----
+const guidanceConfig = yaml(`guidance:              # from whoever runs the server
+  text: Say which commit you read.
+
+repositories:
+  - name: shop-api
+    path: /srv/code/shop-api
+    # guidance:          # or for one repository:
+    #   from: [{repo: acme-rules, path: shop-api}]
+    #   own: false       # ignore its own files`);
+
+const guidanceRead =
+  call('read_guidance', { repo: 'shop-api' }) +
+  answer(`
+=== Guidance for \`shop-api\` ===
+Written for agents by the people who run this server and own \`shop-api\` — follow it while you work with \`shop-api\`.
+
+--- configuration (the server's configuration) ---
+Say which commit you read.
+
+--- AGENTS.md (shop-api @ main 5dd77a24995f) ---
+# shop-api
+
+Run \`make test\` before you suggest a change. Public endpoints live in \`src/routes/\`.
+
+--- .claude/rules/money.md (shop-api @ main 5dd77a24995f) — for src/billing/** ---
+Amounts are integer cents. Never use floats for money.
+
+More, when it applies:
+- \`skill refund-flow\`: How a refund moves through billing, payments and the ledger. — read it with read_guidance(repo="shop-api", name="refund-flow") when it fits the task
+=== End of guidance ===`);
+
+const guidanceRides =
+  call('read_file', { repo: 'shop-api', path: 'src/billing/invoice.py' }) +
+  answer(`
+[\`shop-api\` carries guidance for agents from its owners: call read_guidance(repo="shop-api") once in this conversation, before you rely on this answer, and follow it.]
+
+=== Guidance for \`src/billing/invoice.py\` in \`shop-api\` — follow it while you work there ===
+--- .claude/rules/money.md (shop-api @ main 5dd77a24995f) — for src/billing/** ---
+Amounts are integer cents. Never use floats for money.
+=== End of guidance — the answer follows ===
+
+shop-api · src/billing/invoice.py · main @ 5dd77a24995f (2026-10-15) · lines 1–2 of 2
+
+1\tdef invoice_total(lines):
+2\t    return sum(line.amount_cents for line in lines)`);
+
+// ---- any client ----
+const stdioSetup = shell(`# one person's agent starts the server beside it, over stdio
+$ uvx repo-reader-mcp --config ~/repo-reader.yaml --check
+$ claude mcp add repo-reader -- \\
+    uvx repo-reader-mcp --config ~/repo-reader.yaml`);
+
+const httpSetup = shell(`# one server for the team: Streamable HTTP, at /mcp
+$ export REPO_READER_MCP_TOKEN=…   # config.yaml: http.token_env
+$ uvx repo-reader-mcp --config config.yaml --http 0.0.0.0:8000
+
+# each person's agent
+$ claude mcp add --transport http repo-reader \\
+    https://code.example.com/mcp \\
+    --header "Authorization: Bearer $REPO_READER_MCP_TOKEN"`);
+
+const readingCommands = ['rev-parse', 'symbolic-ref', 'for-each-ref', 'ls-tree', 'cat-file', 'log', 'diff', 'blame', 'merge-base', 'grep'];
+const credentialFiles = ['.env', '*.pem', '*.key', 'id_rsa', 'id_ed25519', '.netrc', '.pgpass', '*.tfstate', '.git-credentials'];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="canonical" href={site} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={site} />
+    <meta name="color-scheme" content="light dark" />
+    <!-- Follow the theme chosen in the guide (Starlight keeps it under this key); without one, the system's. -->
+    <script is:inline>
+      try {
+        var theme = localStorage.getItem('starlight-theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch (e) {}
+    </script>
+  </head>
+  <body class="landing">
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <nav class="wrap nav" aria-label="Main">
+        <a class="brand" href="/">
+          <Logo size={28} />
+          <span>repo-reader-mcp</span>
+        </a>
+        <div class="nav-links">
+          <a href={start}>Docs</a>
+          <a class="wide-only" href="/reference/tools/">Tools</a>
+          <a class="wide-only" href="/reference/safety/">Safety</a>
+          <a class="wide-only" href="/changelog/">Changelog</a>
+        </div>
+        <div class="nav-right">
+          <a class="gh" href={repo}>
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"
+              ><path
+                fill="currentColor"
+                d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"
+              ></path></svg
+            >
+            <span>GitHub</span>
+          </a>
+          <a class="btn btn-small btn-primary wide-only" href={start}>Get started</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main">
+      <!-- ===== hero ===== -->
+      <section class="wrap hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="badge"><span class="dot" aria-hidden="true"></span>open source · Apache-2.0 · pre-alpha</p>
+          <h1 id="hero-title">Let agents read the code.<br /><span class="accent">Never change it.</span></h1>
+          <p class="lede">
+            A read-only <a href="https://modelcontextprotocol.io">MCP</a> server that lets any AI agent read code in git
+            repositories — any branch, tag or commit, with its history — and never changes them.
+          </p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href={start}>Get started</a>
+            <a class="btn btn-ghost" href={repo}>GitHub</a>
+          </div>
+          <p class="hero-note">Pre-alpha, on PyPI: <code>uvx repo-reader-mcp</code> or <code>pip install repo-reader-mcp</code>. A container image comes next.</p>
+          <ul class="hero-stats" aria-label="At a glance">
+            <li><strong>12</strong> read-only tools</li>
+            <li><strong>stdio</strong> or <strong>Streamable HTTP</strong></li>
+            <li>groups like <code>github: acme/shop-*</code></li>
+          </ul>
+        </div>
+
+        <figure class="term session" aria-labelledby="session-title">
+          <figcaption class="term-bar">
+            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="term-title" id="session-title">An agent asks, repo-reader-mcp answers</span>
+            <span class="term-tag">read-only</span>
+          </figcaption>
+          <div class="session-body">
+            <p class="say say-you"><span class="who">you</span>Why does <code>capture()</code> retry — and since when?</p>
+            <pre class="term-body" set:html={call('blame', { repo: 'shop-backend', path: 'src/payments/client.py', start_line: 18 }) + heroBlame} />
+            <pre class="term-body folded" set:html={call('show_commit', { repo: 'shop-backend', commit: '47976fdfd726' }) + '<span class="ln t-dim">  └ the message, and the file it changed</span>'} />
+            <p class="say say-agent">
+              <span class="who">agent</span>Dana Reyes added the retry on 2026-09-03, in <code>47976fdfd726</code>: the
+              payment gateway times out under load, and a capture retried with backoff succeeds. (Read on
+              <code>main</code> at <code>ef0faefaafd1</code>.)
+            </p>
+          </div>
+        </figure>
+      </section>
+
+      <!-- ===== where it reads from, who it answers ===== -->
+      <section class="wrap" aria-label="Works with">
+        <div class="strip">
+          <div class="strip-group">
+            <span class="strip-label">Reads from</span>
+            <ul class="chips">
+              <li>local repositories</li>
+              <li>GitHub</li>
+              <li>GitLab</li>
+              <li>Bitbucket</li>
+              <li>any git server</li>
+            </ul>
+          </div>
+          <div class="strip-group">
+            <span class="strip-label">Answers</span>
+            <ul class="chips">
+              <li>Claude Code</li>
+              <li>Claude Desktop</li>
+              <li>Cursor</li>
+              <li>Codex</li>
+              <li>any MCP client</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== history ===== -->
+      <section class="wrap section" aria-labelledby="history-title">
+        <p class="eyebrow">history</p>
+        <h2 id="history-title">Read the code as it was — not only as it is.</h2>
+        <p class="sub">
+          Every reading tool takes a <code>ref</code>: a branch, a tag, a commit id, <code>main~3</code>. A file as it
+          was at a release, the history of one path, what a branch changes, a commit with its message — and, as in the
+          exchange above, who last changed each line. <a href="/reference/tools/">All the tools →</a>
+        </p>
+        <div class="grid-2">
+          <article class="mini">
+            <h3>A file as it was at a tag</h3>
+            <p>Committed contents only, read from the commit — never from a working folder.</p>
+            <Term title="read_file" html={readAtTag} />
+          </article>
+          <article class="mini">
+            <h3>The history of a path</h3>
+            <p>Newest first; narrowed by author, message or dates, and paged.</p>
+            <Term title="log" html={logOfPath} />
+          </article>
+          <article class="mini">
+            <h3>What a branch changes</h3>
+            <p><code>since_fork</code> compares from the merge base — what a pull request would show.</p>
+            <Term title="diff" html={diffSinceFork} />
+          </article>
+          <article class="mini">
+            <h3>A commit, with its reason</h3>
+            <p>The whole message, the files it changed, and the diff unless you ask for the files only.</p>
+            <Term title="show_commit" html={showCommit} />
+          </article>
+        </div>
+        <ul class="facts" aria-label="Every answer">
+          <li><strong>Names its commit</strong> — <code>main @ ef0faefaafd1 (2026-10-22)</code>: where it read, even after the branch moves.</li>
+          <li><strong>Capped</strong> — 40,000 characters by default; a cut answer says how to go on.</li>
+          <li><strong>Links to the host</strong> — for a repository on GitHub, GitLab or Bitbucket, its page at the commit read.</li>
+        </ul>
+      </section>
+
+      <!-- ===== search ===== -->
+      <section class="wrap section" aria-labelledby="search-title">
+        <div class="split">
+          <div class="split-copy">
+            <p class="eyebrow">search · grep</p>
+            <h2 id="search-title">One question across every repository.</h2>
+            <p class="sub">
+              <code>search</code> looks for text or a regular expression in every repository at once, on each one's
+              default branch, and answers with files and line numbers. <code>grep</code> searches one repository at any
+              ref, with lines of context around each match.
+            </p>
+            <ul class="ticks">
+              <li>No index to build or wait for: git reads the repositories as they are — measured at 0.2–0.4 s across 18 repositories.</li>
+              <li>Git is given the served files by name, so a file <code>include</code> / <code>exclude</code> keep out is never searched.</li>
+              <li>At most 5 lines a file in <code>search</code>, so one answer surveys many files.</li>
+            </ul>
+          </div>
+          <div class="stack">
+            <Term title="search" html={searchAll} />
+            <Term title="grep" html={grepAtTag} />
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== remote repositories and groups ===== -->
+      <section class="wrap section" aria-labelledby="remote-title">
+        <p class="eyebrow">remote repositories · groups</p>
+        <h2 id="remote-title">A whole organisation, named by a pattern.</h2>
+        <p class="sub">
+          Name repositories on GitHub, GitLab, Bitbucket or any git server one by one, or a whole group at once —
+          <code>github: acme/shop-*</code>, <code>gitlab: acme/platform/**/svc-*</code>. The server keeps a mirror of each;
+          people's agents never clone anything. <a href="/remote-repositories/">Remote repositories →</a>
+        </p>
+
+        <ol class="flow" aria-label="How a remote repository reaches an agent">
+          <li class="node">
+            <span class="node-ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"></rect><rect x="3" y="13" width="18" height="7" rx="2"></rect><path d="M7 7.5h.01M7 16.5h.01"></path></svg>
+            </span>
+            <h3>The code host</h3>
+            <p>Lists a group's repositories before every sync: a new one joins, an archived or deleted one leaves.</p>
+          </li>
+          <li class="link" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+          </li>
+          <li class="node">
+            <span class="node-ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="8" ry="3"></ellipse><path d="M4 5.5v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"></path><path d="M4 11.5v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"></path></svg>
+            </span>
+            <h3>A mirror on the server</h3>
+            <p>
+              A bare partial clone: the whole history of the kept branches and tags, the contents of served files only.
+              Synced at start and every 10 minutes; force-pushes followed.
+            </p>
+          </li>
+          <li class="link" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+          </li>
+          <li class="node">
+            <span class="node-ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"></path><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"></path></svg>
+            </span>
+            <h3>Everyone's agents</h3>
+            <p>Read the mirrors through the server. Reading never reaches the network; older contents are fetched on purpose, for served paths only.</p>
+          </li>
+        </ol>
+
+        <div class="grid-2 grid-top">
+          <Term title="config.yaml" html={remoteConfig} />
+          <div class="stack">
+            <Term title="--check · the group's part" html={remoteCheck} />
+            <Term title="list_repos · one of the group" html={remoteList} />
+          </div>
+        </div>
+        <p class="aside">
+          A token is named by the variable that holds it — never written in the file — and goes to its host only, over
+          https, in git's environment: never on a command line, in a URL or in an error.
+        </p>
+      </section>
+
+      <!-- ===== safety ===== -->
+      <section class="wrap section" aria-labelledby="safety-title">
+        <p class="eyebrow">safety</p>
+        <h2 id="safety-title">Safe to hand to a whole team.</h2>
+        <p class="sub">
+          Built to be pointed at many repositories and shared. Each protection has a test that fails when the protection
+          is taken out. <a href="/reference/safety/">The whole safety model →</a>
+        </p>
+
+        <div class="cards-3">
+          <article class="card">
+            <h3>Read-only by construction</h3>
+            <p>Only reading git commands, from a fixed set. No shell; nothing is checked out; never a push.</p>
+            <ul class="chips chips-mono" aria-label="The reading commands">
+              {readingCommands.map((name) => <li>{name}</li>)}
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Only what you serve</h3>
+            <p>
+              <code>include</code> and <code>exclude</code> hold for every tool: a path left out is never listed, read,
+              searched or diffed — and on a mirror, its contents never reach the server's disk.
+            </p>
+            <pre class="mini-code" set:html={yaml(`include: ["docs/**", "README.md"]\nexclude: ["**/fixtures/**", "*.pem"]`)} />
+          </article>
+          <article class="card">
+            <h3>An agent's input stays text</h3>
+            <p>
+              A ref is checked, then resolved to a commit id before git sees it — a branch named like an option is just
+              read. Paths are literal and stay inside the commit's tree.
+            </p>
+          </article>
+        </div>
+
+        <div class="split split-even safety-row">
+          <div class="split-copy">
+            <h3 class="h3-lg">Secrets are hidden in every answer.</h3>
+            <p class="body">
+              Every answer and every error passes a filter last: providers' tokens, passwords in URLs, private keys, values
+              of settings named for secrets become <code>[hidden: …]</code>, and the answer says how many it hid.
+            </p>
+            <ul class="ticks">
+              <li>
+                <strong>A guessed secret can't be confirmed</strong> — not by a match, a missing one, or the lines around
+                it.
+              </li>
+              <li>
+                <strong>Files named for credentials are never served</strong> nor fetched into a mirror:
+                <span class="inline-list">{credentialFiles.map((name) => <code>{name}</code>)}<span>and more</span></span>
+              </li>
+              <li>
+                <strong>The rules lean towards hiding</strong>: a value hidden by mistake costs a look at the host; a value
+                shown costs a rotation.
+              </li>
+            </ul>
+          </div>
+          <div class="stack">
+            <Term title="secrets found in files" html={secretsHidden} />
+            <Term title="files named for credentials" html={credentialRefused} />
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== guidance for agents ===== -->
+      <section class="wrap section" aria-labelledby="guidance-title">
+        <div class="split">
+          <div class="split-copy">
+            <p class="eyebrow">guidance for agents</p>
+            <h2 id="guidance-title">The repository's rules reach the agent reading it.</h2>
+            <p class="sub">
+              An agent reading through the server isn't inside the repository's folder, so its client loads none of the
+              rules written for it. The server delivers them — with what the people who run it add.
+              <a href="/reference/guidance/">Guidance for agents →</a>
+            </p>
+            <dl class="conv">
+              <div>
+                <dt><code>AGENTS.md</code> <code>CLAUDE.md</code> <code>GEMINI.md</code></dt>
+                <dd>at the root, for the whole repository; in a folder, for that folder</dd>
+              </div>
+              <div>
+                <dt><code>.github/copilot-instructions.md</code></dt>
+                <dd>for the whole repository</dd>
+              </div>
+              <div>
+                <dt><code>.claude/rules/**/*.md</code> <code>.cursor/rules/**/*.mdc</code></dt>
+                <dd>for the whole repository, for the paths their frontmatter names, or — Cursor's — when it fits the task</dd>
+              </div>
+              <div>
+                <dt><code>.claude/skills/*/SKILL.md</code></dt>
+                <dd>a skill: named and described, read when it fits the task</dd>
+              </div>
+            </dl>
+            <Term title="config.yaml" html={guidanceConfig} />
+            <p class="aside">
+              Always read on the default branch — the one a team reviews — never on the branch an agent is reading.
+            </p>
+          </div>
+          <div class="stack">
+            <Term title="read_guidance" html={guidanceRead} />
+            <Term title="read_file · a scoped rule rides along" html={guidanceRides} />
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== any client ===== -->
+      <section class="wrap section" aria-labelledby="clients-title">
+        <p class="eyebrow">any MCP client</p>
+        <h2 id="clients-title">One person over stdio. A whole team over HTTP.</h2>
+        <p class="sub">
+          Over stdio, each person's agent starts its own server. For a team, run one server on a shared machine: one set
+          of mirrors, one configuration, one token to the code hosts — nothing to install on people's computers.
+          <a href="/serving-over-http/">Running it for a team →</a>
+        </p>
+        <div class="grid-2">
+          <Term title="stdio — one person" html={stdioSetup} />
+          <Term title="Streamable HTTP — a team" html={httpSetup} />
+        </div>
+        <ul class="facts">
+          <li><strong>A bearer token or a gateway</strong> — on any address but the machine's own, the server won't start open to anyone.</li>
+          <li><strong>Stateless</strong> — each request answered on its own, so it restarts or scales without clients noticing.</li>
+          <li><strong>Plain JSON answers</strong> — what gateways and proxies pass through unchanged; TLS goes in front.</li>
+        </ul>
+      </section>
+
+      <!-- ===== what it is, and isn't ===== -->
+      <section class="wrap section" aria-labelledby="fit-title">
+        <p class="eyebrow">where it fits</p>
+        <h2 id="fit-title">What it is — and isn't.</h2>
+        <p class="sub">Deliberately narrow: reading code with its history, for agents, safely.</p>
+        <div class="cmp-grid">
+          <div class="cmp-card cmp-is">
+            <h3>It is</h3>
+            <ul>
+              <li>A reader of git repositories for AI agents — files, folders, history, diffs, blame and search, at any branch, tag or commit.</li>
+              <li>One server for a team: local repositories and mirrors of any git host, a whole group by a pattern.</li>
+              <li>Configured in one YAML file; secrets named by their variables, never written in it.</li>
+              <li>Open source, Apache-2.0.</li>
+            </ul>
+          </div>
+          <div class="cmp-card cmp-isnt">
+            <h3>It isn't</h3>
+            <ul>
+              <li>A code host or a git client — it never commits, pushes or checks anything out.</li>
+              <li>Issues, pull requests or reviews — the hosts' own MCP servers do that.</li>
+              <li>An index or a code graph — search reads the repositories as they are.</li>
+              <li>A reader of uncommitted work — only what is committed is read.</li>
+              <li>Per-person access, yet — one token for everyone over HTTP, or a gateway in front decides who calls.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== call to action ===== -->
+      <section class="wrap" aria-labelledby="cta-title">
+        <div class="cta-band">
+          <h2 id="cta-title">Point your agent at your repositories.</h2>
+          <p>Run it with <code>uvx</code>, name the repositories in one YAML file, connect your agent over stdio — or run one server for the whole team.</p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href={start}>Get started</a>
+            <a class="btn btn-ghost" href={repo}>GitHub</a>
+          </div>
+          <p class="cta-note">Pre-alpha — on PyPI today; a container image comes next.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="wrap footer">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a class="brand" href="/">
+            <Logo size={26} />
+            <span>repo-reader-mcp</span>
+          </a>
+          <p class="tagline">A read-only MCP server for code in git repositories — any ref, with its history, for any agent.</p>
+        </div>
+        <nav aria-label="Guide">
+          <p class="foot-h">Guide</p>
+          <ul>
+            <li><a href="/getting-started/">Getting started</a></li>
+            <li><a href="/remote-repositories/">Remote repositories</a></li>
+            <li><a href="/serving-over-http/">Running it for a team</a></li>
+            <li><a href="/guide/">About this guide</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Reference">
+          <p class="foot-h">Reference</p>
+          <ul>
+            <li><a href="/reference/tools/">Tools</a></li>
+            <li><a href="/reference/configuration/">Configuration</a></li>
+            <li><a href="/reference/guidance/">Guidance for agents</a></li>
+            <li><a href="/reference/safety/">Safety</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Project">
+          <p class="foot-h">Project</p>
+          <ul>
+            <li><a href={repo}>GitHub</a></li>
+            <li><a href={`${repo}/issues`}>Issues</a></li>
+            <li><a href="/changelog/">Changelog</a></li>
+            <li><a href={`${repo}/blob/main/LICENSE`}>License</a></li>
+          </ul>
+        </nav>
+      </div>
+      <div class="legal">
+        <span>repo-reader-mcp · Apache-2.0 · pre-alpha</span>
+        <span>Built with Astro + Starlight</span>
+      </div>
+    </footer>
+  </body>
+</html>

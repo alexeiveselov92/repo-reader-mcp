@@ -4,7 +4,7 @@
 
 **Updated:** 24 October 2026 (mid-session: the author asked to keep working in the same session).
 
-**Current milestone: 5 — the author's server instance** (`dev/PLAN.md`). Milestones 1 (local repositories),
+**Current milestone: 6 — ready to deploy** (`dev/PLAN.md`). Milestones 1 (local repositories),
 2 (remote repositories, groups, HTTP, links), 3 (the docs site, live at https://repo-reader.pipelab.dev) and
 4 (search and safety) are done.
 
@@ -37,13 +37,14 @@
 - Real clients: Claude Code over stdio and HTTP, the MCP Inspector over both; an 18-repository public GitHub group;
   `search` answered a cross-repository question.
 
-## Next step — milestone 5: the site's landing page
+## Next step
 
-A landing page like detectkit's site — a hero and the docs, not detectkit's UI (the author's order, 2026-10-24).
-Then milestone 6 — ready to deploy: a container image of the server on GHCR (built by CI), a health endpoint, the guide's page on running
-it in a container behind an MCP gateway — proved by a real installation that a company keeps in its own repositories
-(its configuration and deployment live there, never here; what it needs comes back here as general requirements).
-pipelab hosts the docs site only.
+- **0.1.0 on PyPI**: everything is ready (`publish` workflow, trusted publishing, the wheel checked through `uvx`); the
+  tag `v0.1.0` is pushed once the author adds the pending publisher on PyPI (`repo-reader-mcp`, owner
+  `alexeiveselov92`, workflow `publish.yml`, environment `pypi`).
+- **Milestone 6 — ready to deploy**: a container image on GHCR (built by CI), a health endpoint, the guide's page on
+  running it in a container behind an MCP gateway — proved by the company installation kept in its own repository.
+  The landing page (milestone 5) is done.
 
 ## What the author needs to do
 
