@@ -29,7 +29,8 @@ Order changed by the author: remote repositories now come before the docs site (
 
 ## How it was verified
 
-- 124 tests on made-up repositories the tests build (real git, no network); ruff clean.
+- 125 tests on made-up repositories the tests build (real git, no network); ruff clean; CI green on GitHub (its git is
+  newer than the author's 2.43 — it caught commit dates written as `Z`, now normalised).
 - Every protection (25) taken out in turn: its test failed each time (a script in the session's scratch, not kept).
 - A refuting review by a second agent: found `blame.ignoreRevsFile` reading any file on the server's disk (closed),
   uncapped git output (capped), the history telling excluded activity (filtered). Two findings of my own while

@@ -271,3 +271,10 @@ async def test_every_answer_stays_under_the_limit(shop, tool, arguments, note):
     assert len(text) <= 2000
     if note:
         assert note in text
+
+
+def test_dates_read_the_same_whatever_git_s_version_writes():
+    from repo_reader_mcp.repository import _iso
+
+    assert _iso("2026-02-15T10:00:00Z") == _iso("2026-02-15T10:00:00+00:00") == "2026-02-15T10:00:00+00:00"
+    assert _iso("2026-02-15T12:00:00+02:00") == "2026-02-15T12:00:00+02:00"

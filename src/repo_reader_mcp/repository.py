@@ -296,6 +296,7 @@ class Repository:
     def commit(self, at: At) -> CommitInfo:
         out = self.git("log", "-1", f"--format=%H{SEP}%P{SEP}%an{SEP}%aI{SEP}%cn{SEP}%cI{SEP}%B", at.commit, "--").text
         commit, parents, author, author_date, committer, committer_date, message = out.split(SEP, 6)
+        author_date, committer_date = _iso(author_date), _iso(committer_date)
         return CommitInfo(commit, parents.split(), author, author_date, committer, committer_date, message.strip("\n"))
 
     def empty_tree(self) -> str:
@@ -347,6 +348,14 @@ class Repository:
             date = _epoch_date(info.get("author-time", ""))
             commits[commit] = BlameCommit(date, info.get("author", ""), info.get("summary", ""))
         return lines, commits
+
+
+def _iso(value: str) -> str:
+    """A date as git's `%aI` / `%cI` gives it, the same whatever git's version (newer ones write UTC as `Z`)."""
+    try:
+        return datetime.fromisoformat(value).isoformat()
+    except ValueError:
+        return value
 
 
 def _epoch_date(value: str) -> str:
