@@ -10,7 +10,7 @@ with something visible: a real agent answering through the server.
 - [x] A running skeleton: the server over stdio with one tool, its test through the SDK's in-process client,
       lint, CI.
 
-## Milestone 1. Local repositories, read-only — 2 sessions
+## Milestone 1. Local repositories, read-only — ✅ 2026-10-24
 
 - [x] The configuration file (YAML) and its check: a wrong entry stops the server, naming it. (2026-10-24)
 - [x] `list_repos`, `list_refs`, `read_file`, `list_files` at any ref of a local repository. (2026-10-24)
@@ -18,10 +18,11 @@ with something visible: a real agent answering through the server.
 - [x] Tests on made-up repositories built by the tests themselves (real git, no network); every protection with a test
       that fails when it is removed (checked by taking each out). (2026-10-24)
 - [x] Real Claude Code over stdio answers questions about a test repository. (2026-10-24)
-- [ ] Repositories' guidance for agents (`dev/DESIGN.md`): the repository's own `AGENTS.md` / `CLAUDE.md` / rules /
-      skills, text and files from the configuration, a folder of another repository (`from`); delivered with the first
-      answer about a repository and the first touch of a scoped path; `read_guidance`; `--check` warns about guidance
-      outside `include`. Seen working: Claude Code following a rule it could not have guessed from the code.
+- [x] Repositories' guidance for agents (`dev/DESIGN.md`): the repository's own `AGENTS.md` / `CLAUDE.md` / rules /
+      skills, text and files from the configuration, a folder of another repository (`from`), `listed: false`; every
+      answer says a repository has it, a short scoped rule rides with answers about its paths; `read_guidance`;
+      `--check` warns about guidance outside `include`. Seen working: Claude Code following rules it could not have
+      guessed from the code. (2026-10-24)
 
 ## Milestone 2. Remote repositories — 2 sessions
 

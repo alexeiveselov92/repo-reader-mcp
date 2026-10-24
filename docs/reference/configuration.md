@@ -35,6 +35,8 @@ A list; at least one. Each entry is one repository.
 | `name` | required | How agents and tools name it. Up to 100 letters, digits, `.`, `_`, `-`, starting with a letter or digit; unique. |
 | `path` | required | The repository's top folder: a checkout (with its `.git` inside) or a bare repository. `~` is expanded; a relative path is taken from the configuration file's folder. A folder *inside* a repository is refused — the whole repository above it would be served. |
 | `description` | | A sentence for agents: what this repository is. Shown by `list_repos`. |
+| `listed` | | `false` keeps it from agents — out of `list_repos` and every tool — as a source of [guidance](guidance.md) for other repositories only. Default `true`. |
+| `guidance` | | [Guidance for agents](guidance.md) about this repository: `text`, `files`, `from` (folders of other configured repositories), `own` (whether its own `AGENTS.md`, rules and skills count; default `true`). |
 | `include` | | Patterns of the paths served. When given, only these are served — a folder added to the repository later stays out until a pattern takes it. Not given: everything. |
 | `exclude` | | Patterns of paths never served, even inside `include`. |
 
@@ -62,6 +64,11 @@ it is:
 `*` matches within one folder name, `?` one character, `**` any number of folders. `[` and `]` are taken literally.
 
 A path is served when `include` (if given) matches it and `exclude` doesn't.
+
+## `guidance`
+
+[Guidance for agents](guidance.md) for every repository on the server: `text`, and `files` on the server's disk (read at
+start; relative paths from this file's folder).
 
 ## `limits`
 

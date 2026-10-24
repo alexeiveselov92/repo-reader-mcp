@@ -7,9 +7,20 @@ repositories:
     description: The shop's backend — orders, payments, the public API.
     exclude: ["**/fixtures/**", "*.pem", "*.env"]
 
+    guidance:                            # for agents, beside the repository's own AGENTS.md, rules and skills
+      text: Amounts are cents. Answer them in euros with two decimals.
+      from: [{repo: acme-rules, path: shop-backend}]   # a folder of another repository: its AGENTS.md, rules, skills
+
   - name: handbook
     path: /srv/code/handbook
     include: ["docs/**", "README.md"]    # only these are ever served; a folder added later stays out
+
+  - name: acme-rules
+    path: /srv/code/acme-rules
+    listed: false                        # a source of guidance only; agents don't see it
+
+guidance:                                # for every repository
+  text: Say which commit you read.
 
 limits:
   answer_characters: 40000               # clients cut long answers; a cut answer says so

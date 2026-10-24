@@ -83,3 +83,24 @@ follows as milestone 3.
 
 **Why.** The target is a shared server over a company's many remote repositories; the reading built in milestone 1
 serves it unchanged, and the site can publish the guide once that is true.
+
+## 2026-10-24 · A history leaves out commits that changed only what is not served
+
+**Decision** (the author). When a repository is served in part, `log` lists only commits that changed something
+served, or nothing at all; `skip` counts what the agent sees. Commit messages stay as written.
+
+**Why.** The refuting review showed a whole-branch history telling the activity on excluded paths (a commit
+"Rotate secrets/…" touching only them). Messages are free text, so this narrows the leak rather than closing it — the
+guide says so.
+
+## 2026-10-24 · Guidance is announced by every answer, not given once a session
+
+**Decision** (made while building; the author to confirm). Every answer about a repository with guidance starts with
+one line naming `read_guidance`; a short scoped rule rides with each answer about its paths; the full guidance is read
+with `read_guidance`.
+
+**Why.** The design said "the first answer in a session carries it" — but MCP keeps no session between requests
+(protocol revision 2026-07-28: each request is its own exchange; the SDK builds a new connection object per request).
+A server can't know what an agent read, and on a shared server it can't tell agents apart. One line per answer
+(~40 tokens) works on every transport; real Claude Code read the guidance on its own in every conversation and
+followed it.

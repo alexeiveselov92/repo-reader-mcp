@@ -14,7 +14,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from .git import GitError, find_git_dir
-from .paths import Matcher, compile_pattern
+from .paths import Matcher, PathError, clean_path, compile_pattern
 
 NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
 
@@ -41,19 +41,50 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def _check_patterns(patterns: list[str] | None) -> list[str] | None:
+    for pattern in patterns or ():
+        compile_pattern(pattern)  # a ValueError names what is wrong with it
+    return patterns
+
+
+class GuidanceSource(_Strict):
+    """A folder of another configured repository whose guidance applies to this one."""
+
+    repo: str
+    path: str = ""
+    files: list[str] | None = Field(default=None, min_length=1)  # given: exactly these files, in force everywhere
+
+    @field_validator("path")
+    @classmethod
+    def _plain(cls, path: str) -> str:
+        try:
+            return clean_path(path, allow_root=True)
+        except PathError as error:
+            raise ValueError(str(error)) from None
+
+    _files = field_validator("files")(_check_patterns)
+
+
+class ServerGuidanceSettings(_Strict):
+    text: str | None = None
+    files: list[str] = Field(default_factory=list)
+
+
+class GuidanceSettings(ServerGuidanceSettings):
+    sources: list[GuidanceSource] = Field(default_factory=list, alias="from")
+    own: bool = True
+
+
 class RepositorySettings(_Strict):
     name: str = Field(pattern=NAME_PATTERN)
     path: str = Field(min_length=1)
     description: str | None = None
+    listed: bool = True
     include: list[str] | None = Field(default=None, min_length=1)
     exclude: list[str] = Field(default_factory=list)
+    guidance: GuidanceSettings = Field(default_factory=GuidanceSettings)
 
-    @field_validator("include", "exclude")
-    @classmethod
-    def _patterns(cls, patterns: list[str] | None) -> list[str] | None:
-        for pattern in patterns or ():
-            compile_pattern(pattern)  # a ValueError names what is wrong with it
-        return patterns
+    _patterns = field_validator("include", "exclude")(_check_patterns)
 
 
 class Limits(_Strict):
@@ -63,6 +94,23 @@ class Limits(_Strict):
 class Settings(_Strict):
     repositories: list[RepositorySettings] = Field(min_length=1)
     limits: Limits = Field(default_factory=Limits)
+    guidance: ServerGuidanceSettings = Field(default_factory=ServerGuidanceSettings)
+
+
+@dataclass(frozen=True)
+class TextDoc:
+    """Guidance written in the configuration, or in a file on the server's disk it names — read at start."""
+
+    name: str
+    source: str
+    text: str
+
+
+@dataclass(frozen=True)
+class RepositoryGuidance:
+    docs: list[TextDoc] = field(default_factory=list)
+    sources: list[GuidanceSource] = field(default_factory=list)
+    own: bool = True
 
 
 @dataclass(frozen=True)
@@ -72,12 +120,32 @@ class RepositoryConfig:
     git_dir: str
     description: str | None = None
     matcher: Matcher = field(default_factory=Matcher)
+    listed: bool = True
+    guidance: RepositoryGuidance = field(default_factory=RepositoryGuidance)
 
 
 @dataclass(frozen=True)
 class Config:
     repositories: list[RepositoryConfig] = field(default_factory=list)
     limits: Limits = field(default_factory=Limits)
+    guidance: list[TextDoc] = field(default_factory=list)  # for every repository
+
+
+def _text_docs(settings: ServerGuidanceSettings, base: Path, where: str, problems: list[str]) -> list[TextDoc]:
+    """The configuration's own guidance: its text, and the files it names, read now."""
+    docs = []
+    if settings.text and settings.text.strip():
+        docs.append(TextDoc("configuration", "the server's configuration", settings.text.strip()))
+    for i, name in enumerate(settings.files):
+        file = Path(os.path.expanduser(name))
+        file = file if file.is_absolute() else base / file
+        try:
+            text = file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            problems.append(f"{where} → files[{i}]: can't read {file}: {getattr(error, 'strerror', None) or error}")
+            continue
+        docs.append(TextDoc(f"configuration:{file.name}", f"the server's file {file}", text.strip()))
+    return docs
 
 
 def _where(loc: tuple[Any, ...], data: Any) -> str:
@@ -122,9 +190,11 @@ def parse_config(data: Any, base: Path, source: str = "") -> Config:
     except ValidationError as error:
         raise ConfigError(source, _schema_problems(error, data)) from None
 
-    problems = []
+    problems: list[str] = []
     seen: set[str] = set()
     repositories = []
+    names = {repo.name for repo in settings.repositories}
+    server_guidance = _text_docs(settings.guidance, base, "guidance", problems)
     for i, repo in enumerate(settings.repositories):
         where = f"repositories[{i}] ({repo.name})"
         if repo.name in seen:
@@ -141,11 +211,20 @@ def parse_config(data: Any, base: Path, source: str = "") -> Config:
         except GitError as error:
             problems.append(f"{where} → path: {path} is not a git repository's top: {error}")
             continue
+        for j, origin in enumerate(repo.guidance.sources):
+            if origin.repo not in names or origin.repo == repo.name:
+                other = "itself" if origin.repo == repo.name else f"`{origin.repo}`, which is not configured"
+                problems.append(f"{where} → guidance → from[{j}] → repo: names {other}")
+        guidance = RepositoryGuidance(
+            _text_docs(repo.guidance, base, f"{where} → guidance", problems), repo.guidance.sources, repo.guidance.own
+        )
         matcher = Matcher(repo.include, repo.exclude)
-        repositories.append(RepositoryConfig(repo.name, str(path), git_dir, repo.description, matcher))
+        repositories.append(
+            RepositoryConfig(repo.name, str(path), git_dir, repo.description, matcher, repo.listed, guidance)
+        )
     if problems:
         raise ConfigError(source, problems)
-    return Config(repositories, settings.limits)
+    return Config(repositories, settings.limits, server_guidance)
 
 
 def load_config(file: str | os.PathLike[str]) -> Config:

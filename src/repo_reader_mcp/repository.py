@@ -89,6 +89,7 @@ class LogEntry:
     date: str
     author: str
     subject: str
+    paths: tuple[str, ...] = ()  # the files it changed (against its first parent), when asked for
 
 
 @dataclass(frozen=True)
@@ -251,11 +252,26 @@ class Repository:
         since: str | None = None,
         until: str | None = None,
         message: str | None = None,
-        count: int = 30,
+        count: int | None = 30,
         skip: int = 0,
+        with_paths: bool = False,
     ) -> tuple[list[LogEntry], bool]:
-        """Commits newest first; and whether there were more than were read."""
-        args = ["log", f"--format=%H{SEP}%cs{SEP}%an{SEP}%s{END}", f"--max-count={count}", f"--skip={skip}"]
+        """Commits newest first (all of them when `count` is None); and whether there were more than were read.
+
+        `with_paths` adds the files each commit changed — against its first parent, renames as a deletion and an
+        addition.
+        """
+        args = ["log", f"--skip={skip}", *([f"--max-count={count}"] if count is not None else [])]
+        if with_paths:
+            args += [
+                f"--format={END}%H{SEP}%cs{SEP}%an{SEP}%s",
+                "--name-only",
+                "-z",
+                "--no-renames",
+                "--diff-merges=first-parent",
+            ]
+        else:
+            args.append(f"--format=%H{SEP}%cs{SEP}%an{SEP}%s{END}")
         if author:
             args.append(f"--author={author}")
         if since:
@@ -270,9 +286,11 @@ class Repository:
         out = self.git(*args)
         entries = []
         for record in records(out, END):
-            parts = record.strip("\n").split(SEP)
+            head, _, names = record.partition("\0") if with_paths else (record, "", "")
+            parts = head.strip("\n").split(SEP)
             if len(parts) == 4:
-                entries.append(LogEntry(*parts))
+                paths = tuple(name for name in names.lstrip("\n").split("\0") if name)
+                entries.append(LogEntry(*parts, paths=paths))
         return entries, out.cut
 
     def commit(self, at: At) -> CommitInfo:

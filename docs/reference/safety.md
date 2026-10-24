@@ -50,9 +50,15 @@ folder that isn't there. Narrowing a history or a diff to an excluded path is re
 answer never tells whether it exists or changed. A commit that changed excluded files says how many it doesn't show —
 never which.
 
-What it doesn't hide: **commit messages** are shown as their authors wrote them, and the history of a whole branch
-(`log` without a `path`) lists every commit — including one that changed only excluded paths, whose subject may name
-them. Contents of excluded files never appear.
+A history (`log`) lists only commits that changed something served (or nothing at all): a commit that changed only
+excluded paths is left out. What it doesn't hide: **commit messages** are shown as their authors wrote them — a commit
+that changed a served file and an excluded one may name both in its message.
+
+## Guidance can't be planted from a branch
+
+A repository's [guidance for agents](guidance.md) is presented to agents as instructions, so it is read only on the
+default branch — the one a team reviews — never on the branch an agent is reading; a repository whose contributors
+shouldn't instruct agents is configured with `own: false`. Guidance obeys `include` / `exclude` like any other file.
 
 ## Sizes
 

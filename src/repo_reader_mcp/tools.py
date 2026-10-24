@@ -4,6 +4,8 @@ commit it was read at, sized to `limits.answer_characters`; a cut answer says so
 
 from __future__ import annotations
 
+import inspect
+from contextvars import ContextVar
 from fnmatch import fnmatchcase
 from typing import Annotated, Literal
 
@@ -13,6 +15,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from .config import Config
+from .guidance import Guide, render, render_one
 from .paths import PathError, clean_path, under
 from .repository import At, Change, Entry, ReadError, Repository
 
@@ -24,6 +27,9 @@ LINE_CHARACTERS = 2000  # a longer line is cut, saying how much
 NOTE_RESERVE = 400  # kept free in every answer for the closing note
 PATCH_BATCH = 100  # paths per git call when a diff is limited to some files
 BLAME_LINES = 5000  # the most lines one blame call works on
+
+# What is left of the answer limit for a tool's own answer, once guidance due with it took its share (at most half).
+BUDGET: ContextVar[int | None] = ContextVar("budget", default=None)
 
 RepoName = Annotated[str, Field(description="A repository's name, as list_repos shows it.")]
 RefArg = Annotated[
@@ -85,8 +91,13 @@ def _counts(change: Change) -> str:
 
 def register(server: MCPServer, config: Config) -> None:
     """Add the reading tools over the configured repositories to a server."""
-    repositories = {repo.name: Repository(repo) for repo in config.repositories}
+    every = {repo.name: Repository(repo) for repo in config.repositories}
+    repositories = {name: repo for name, repo in every.items() if repo.config.listed}  # what agents may name
     limit = config.limits.answer_characters
+    guide = Guide(config, every)
+
+    def room() -> int:
+        return BUDGET.get() or limit
 
     def repo_named(name: str) -> Repository:
         if name in repositories:
@@ -134,23 +145,34 @@ def register(server: MCPServer, config: Config) -> None:
             raise outside(repo, clean)
         return clean
 
-    def guard(fn):
-        """Turn a ReadError into the tool error an agent reads."""
+    def guided(fn, carries: bool):
+        """The tool as the server offers it: a ReadError becomes the error an agent reads, and an answer about a
+        repository with guidance carries what is due (a line saying so; a short rule for the path it is about) — taking
+        at most half of the answer. read_guidance (`carries` False) answers with guidance itself."""
+        signature = inspect.signature(fn, eval_str=True)
 
         def wrapped(*args, **kwargs):
+            arguments = signature.bind(*args, **kwargs).arguments
+            name, path = arguments.get("repo"), arguments.get("path")
             try:
-                return fn(*args, **kwargs)
+                due = ""
+                if carries and name in repositories:
+                    due = guide.due(name, path_of(path, allow_root=True) if path else None)[: limit // 2]
+                token = BUDGET.set(limit - len(due))
+                try:
+                    return due + fn(*args, **kwargs)
+                finally:
+                    BUDGET.reset(token)
             except ReadError as error:
                 raise ToolError(str(error)) from None
 
+        wrapped.__signature__ = signature
         wrapped.__name__ = fn.__name__
         wrapped.__doc__ = fn.__doc__
-        wrapped.__annotations__ = fn.__annotations__
-        wrapped.__wrapped__ = fn
         return wrapped
 
-    def tool(fn):
-        server.add_tool(guard(fn), annotations=READ_ONLY, structured_output=False)
+    def tool(fn, carries: bool = True):
+        server.add_tool(guided(fn, carries), annotations=READ_ONLY, structured_output=False)
         return fn
 
     # --- list_repos -----------------------------------------------------------------------------------------------
@@ -159,7 +181,7 @@ def register(server: MCPServer, config: Config) -> None:
     def list_repos() -> str:
         """The repositories this server reads: each one's default branch and the commit it is at, its branches and
         tags, and what of it is served. Call it first; the other tools take a repository's name as `repo`."""
-        answer = Answer(limit)
+        answer = Answer(room())
         if not repositories:
             return "No repositories are configured on this server.\n"
         count = _plural(len(repositories), "repository", "repositories")
@@ -186,6 +208,12 @@ def register(server: MCPServer, config: Config) -> None:
             answer.add(line + " — list_refs lists them")
             if not repo.matcher.takes_everything:
                 answer.add("Serves only part of it: paths outside its include / exclude are not shown.")
+            pieces = len(guide.of(repo.name).docs)
+            if pieces:
+                answer.add(
+                    f'Guidance for agents: {_plural(pieces, "piece")} — read_guidance(repo="{repo.name}") '
+                    "before you work with it."
+                )
         return answer.text("cut: more repositories than fit" if answer.full else None)
 
     # --- list_refs ------------------------------------------------------------------------------------------------
@@ -209,7 +237,7 @@ def register(server: MCPServer, config: Config) -> None:
         groups = {"branch": "Branches", "remote": "Remote-tracking branches", "tag": "Tags"}
         wanted = {"all": groups, "branches": ("branch", "remote"), "tags": ("tag",)}[kind]
         shown = [ref for ref in refs if ref.kind in wanted]
-        answer = Answer(limit)
+        answer = Answer(room())
         filters = f" matching `{pattern}`" if pattern else ""
         answer.add(f"{r.name} — {_plural(len(shown), 'ref')}{filters}, newest first. `*` marks the default branch.")
         width = min(max((len(ref.name) for ref in shown), default=0), 40)
@@ -262,7 +290,7 @@ def register(server: MCPServer, config: Config) -> None:
             raise ToolError(f"`{clean}` has {_plural(total, 'line')} at {at.describe()}; start_line is past its end")
         last = total if max_lines is None else min(total, start_line + max_lines - 1)
         width = len(str(last))
-        body = Answer(limit - len(head) - 60)
+        body = Answer(room() - len(head) - 60)
         shown_to = start_line - 1
         for number in range(start_line, last + 1):
             if not body.add(f"{number:>{width}}\t{_cut_line(lines[number - 1])}"):
@@ -320,7 +348,7 @@ def register(server: MCPServer, config: Config) -> None:
             summary = _plural(len(files), "file")
         else:
             summary = f"{_plural(len(folders), 'folder')}, {_plural(len(files), 'file')}"
-        answer = Answer(limit)
+        answer = Answer(room())
         answer.add(f"{r.name} · {where} · {at.describe()} — {summary}")
         answer.add()
         shown = sum(1 for item in items if answer.add(item))
@@ -350,9 +378,16 @@ def register(server: MCPServer, config: Config) -> None:
         r = repo_named(repo)
         at = r.resolve(ref)
         clean = scope(r, at, path)
-        commits, unread = r.log(
-            at, path=clean, author=author, since=since, until=until, message=message, count=max_count + 1, skip=skip
-        )
+        asked = dict(path=clean, author=author, since=since, until=until, message=message)
+        held_back = not r.matcher.takes_everything
+        if held_back:
+            # Only commits that changed something served (or nothing at all): one that changed only paths outside
+            # include / exclude is not told — paged here, after that choice, so `skip` counts what the agent sees.
+            found, unread = r.log(at, **asked, count=None, with_paths=True)
+            seen = [c for c in found if not c.paths or any(r.matcher.allows(p) for p in c.paths)]
+            commits = seen[skip : skip + max_count + 1]
+        else:
+            commits, unread = r.log(at, **asked, count=max_count + 1, skip=skip)
         more = len(commits) > max_count or unread
         commits = commits[:max_count]
         filters = [f"of {clean}" if clean else ""]
@@ -362,8 +397,10 @@ def register(server: MCPServer, config: Config) -> None:
             if value
         ]
         title = " ".join(f for f in filters if f)
-        answer = Answer(limit)
+        answer = Answer(room())
         answer.add(f"{r.name} · log{' ' + title if title else ''} · {at.describe()} — newest first")
+        if held_back:
+            answer.add("(Only commits that changed what this server serves.)")
         answer.add()
         if not commits:
             answer.add("No commits match.")
@@ -434,7 +471,7 @@ def register(server: MCPServer, config: Config) -> None:
         at = r.resolve(commit)
         clean = scope(r, at, path)
         info = r.commit(at)
-        answer = Answer(limit)
+        answer = Answer(room())
         answer.add(f"{r.name} · commit {info.commit[:12]}")
         answer.add(f"Author: {info.author}, {info.author_date}")
         if (info.committer, info.committer_date) != (info.author, info.author_date):
@@ -472,7 +509,7 @@ def register(server: MCPServer, config: Config) -> None:
         at_head = r.resolve(head)
         clean = scope(r, at_head, path)
         start = at_base.commit
-        answer = Answer(limit)
+        answer = Answer(room())
         line = f"{r.name} · diff {at_base.describe()} → {at_head.describe()}"
         if since_fork:
             fork = r.merge_base(at_base.commit, at_head.commit)
@@ -514,7 +551,7 @@ def register(server: MCPServer, config: Config) -> None:
         lines, commits = r.blame(at, clean, start_line, last)
         width = len(str(last))
         head = f"{r.name} · blame {clean} · {at.describe()}"
-        body = Answer(limit - len(head) - 60)
+        body = Answer(room() - len(head) - 60)
         shown_to = start_line - 1
         current = None
         for line in lines:
@@ -535,3 +572,32 @@ def register(server: MCPServer, config: Config) -> None:
             more = "the answer is full" if body.full else "as asked" if max_lines else "a window at a time"
             note = f"lines {shown_to + 1}–{total} not shown ({more}) — call blame with start_line={shown_to + 1}"
         return f"{head} · lines {start_line}–{shown_to} of {total}\n\n" + body.text(note)
+
+    # --- read_guidance --------------------------------------------------------------------------------------------
+
+    def read_guidance(
+        repo: RepoName,
+        name: Annotated[
+            str | None,
+            Field(description="One piece by the name the guidance gives it — a file, or a skill. Default: all of it."),
+        ] = None,
+    ) -> str:
+        """The guidance a repository's owners — and the people who run this server — wrote for agents working with it:
+        rules for the whole repository or for some folders, and skills. An answer about a repository that has it says
+        so: read it once in a conversation — all of it, then one piece it names when it fits (a skill) — and follow
+        it."""
+        r = repo_named(repo)
+        guidance = guide.of(r.name)
+        if not guidance.docs:
+            return f"{r.name} has no guidance for agents.\n"
+        if name is None:
+            return render(r.name, guidance, room())
+        doc = guidance.named(name)
+        if doc is None:
+            raise ToolError(f"{r.name}'s guidance has nothing named `{name}` — read_guidance without a name lists it")
+        text = render_one(r.name, doc)
+        if len(text) > room():
+            text = text[: room() - 200] + f"\n[cut: the rest is in {doc.source}]\n"
+        return text
+
+    tool(read_guidance, carries=False)

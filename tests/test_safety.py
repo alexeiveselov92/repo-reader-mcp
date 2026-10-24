@@ -234,6 +234,23 @@ async def test_excluded_paths_never_appear_in_any_answer(shop):
     assert hidden.replace("secrets/", "X/") == absent.replace("nowhere/", "X/")
 
 
+async def test_the_history_leaves_out_commits_that_changed_only_what_is_not_served(shop, tmp_path):
+    copy = tmp_path / "copy"
+    git(tmp_path, "clone", "-q", str(shop[0]), str(copy))
+    write(copy, "secrets/prod.env", "API_KEY=made-up-rotated-value\n")
+    git(copy, "commit", "-q", "-am", "Rotate secrets/prod.env", date="2026-03-05T10:00:00+00:00")
+    git(copy, "commit", "-q", "--allow-empty", "-m", "Release notes only", date="2026-03-06T10:00:00+00:00")
+
+    everything, _ = await ask(config_for(copy), "log", repo="shop")
+    assert "Rotate secrets/prod.env" in everything
+    held, _ = await ask(config_for(copy, exclude=["secrets"]), "log", repo="shop")
+    assert "Rotate secrets" not in held and "(Only commits that changed what this server serves.)" in held
+    assert "Release notes only" in held  # it changed nothing, so it tells nothing
+    assert "Add discounts" in held  # it changed a served file too
+    paged, _ = await ask(config_for(copy, exclude=["secrets"]), "log", repo="shop", max_count=1, skip=1)
+    assert "Add the catalog" in paged and "call log with skip=2" in paged  # `skip` counts what the agent sees
+
+
 async def test_include_takes_only_what_it_names(shop):
     cfg = config_for(shop[0], include=["src/**"])
     text, _ = await ask(cfg, "list_files", repo="shop")

@@ -6,7 +6,7 @@ package and a container image come later.)
 
 ## 1. Get it
 
-You need git 2.30 or newer, Python 3.12 and [uv](https://docs.astral.sh/uv/).
+You need git 2.31 or newer, Python 3.12 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/alexeiveselov92/repo-reader-mcp.git

@@ -18,6 +18,9 @@ Every tool repo-reader-mcp offers to an agent. All are read-only: each says so t
   from, the `skip` to page on, or the `path` to narrow to.
 - **Paths outside the repository's `include` / `exclude` are never shown** — not listed, not in a diff, not read.
   Asked for by name, the answer is that the path is outside what this server serves.
+- **Guidance comes first.** An answer about a repository that carries [guidance for agents](guidance.md) starts with a
+  line saying so; an answer about a path a short scoped rule covers carries the rule, between `=== Guidance … ===` and
+  `=== End of guidance — the answer follows ===`. Guidance takes at most half of an answer.
 
 ## `about`
 
@@ -28,7 +31,8 @@ status, `read_only: true` and how many repositories it serves.
 
 The repositories this server reads. Takes nothing. For each: its name, its description (from the configuration), its
 default branch with the commit it is at, the date and the subject of that commit, how many branches and tags it has,
-and whether only part of it is served.
+whether only part of it is served, and whether it carries [guidance for agents](guidance.md). Repositories configured
+with `listed: false` are not shown.
 
 ```
 ## shop
@@ -96,8 +100,9 @@ committed), author and subject.
 | `max_count` | at most this many commits (default 30, up to 500) |
 | `skip` | skip this many first — to page on; a cut answer gives the next `skip` |
 
-A file's history stops where the file was renamed: renames are not followed. Messages are shown as written; the
-history of a whole branch lists every commit, including ones that changed only paths this server doesn't serve.
+A file's history stops where the file was renamed: renames are not followed. When the repository is served only in
+part (`include` / `exclude`), the history lists only commits that changed something served — or nothing at all — and
+says so; `skip` counts the commits shown. Messages are shown as their authors wrote them.
 
 ## `show_commit`
 
@@ -152,3 +157,17 @@ is one `show_commit` away:
 ```
 
 Binary files and links are refused.
+
+## `read_guidance`
+
+The [guidance](guidance.md) a repository carries for agents — written by its owners (`AGENTS.md`, `CLAUDE.md`, rules,
+skills) and by the people who run the server — read on its default branch.
+
+| Input | |
+|---|---|
+| `repo` | the repository |
+| `name` | one piece, by the name the guidance gives it: a file (`AGENTS.md`, `.claude/rules/pricing.md`, `acme-rules:shop/AGENTS.md`) or a skill (`refund-flow`) |
+
+Without `name`: everything in force — for the whole repository, and for some paths (each with its scope) — then the
+pieces read when they fit the task (skills), named with the call that reads each. With `name`: that piece in full. A
+repository with no guidance says so.

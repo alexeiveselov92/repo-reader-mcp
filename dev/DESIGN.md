@@ -57,7 +57,7 @@ is a pointer to a commit), and the server reads from there: "the file `src/app.p
   id finishes on it. Every answer names the commit it read, so an agent knows exactly which version it saw.
 - **A ref is resolved once**, to a commit id, at the start of a call; every later command of the call gets the id.
 
-## Repositories' guidance for agents (planned — after milestone 1's tools)
+## Repositories' guidance for agents (milestone 1 — built 2026-10-24)
 
 A repository often carries rules written for agents (`AGENTS.md`, `CLAUDE.md`, `.claude/rules/`, skills). An agent
 reading it through this server is not inside its folder, so its own client loads none of it. The server delivers it,
@@ -83,14 +83,20 @@ repositories:
       own: true                   # the repository's own guidance files (default); false to ignore them
 ```
 
-- **What counts as guidance** (a list the configuration can change): `AGENTS.md` (the cross-vendor convention),
+- **What counts as guidance** (a fixed list for now; the configuration may change it later): `AGENTS.md` (the
+  cross-vendor convention),
   `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, `.claude/rules/**/*.md` (a rule's `paths:` frontmatter
   scopes it), `.cursor/rules/*.mdc` (`globs:`), `.claude/skills/*/SKILL.md` (name and description; the body on demand),
   and `AGENTS.md` / `CLAUDE.md` in subfolders (scoped to their folder).
-- **Delivered like a client delivers its own**: the server's instructions say repositories carry guidance from their
-  owners; the first answer about a repository in a session carries its guidance (the configuration's text first, then
-  `from`, then the repository's own root files and unscoped rules, and a list of the scoped rules and skills); the first
-  answer touching a scoped path carries that scope's guidance once; `read_guidance` gives all of it, or one skill.
+- **Delivered without a session.** MCP keeps no session between requests (protocol revision 2026-07-28: each request
+  is its own exchange — found while building this, 2026-10-24), so the server can't know what an agent read in its
+  conversation. Every answer about a repository with guidance starts with one line saying so and naming
+  `read_guidance(repo=…)`; an answer about a path a scoped rule covers carries the rule when the scope's guidance is
+  short (≤ 1,500 characters), else names it; `read_guidance` gives all of it (the configuration's text first, then
+  `from`, then the repository's own files; scoped rules with their scope; skills named), or one piece. Guidance takes
+  at most half of an answer. Seen working: real Claude Code called `read_guidance` on its own in every conversation and
+  followed rules it could not have guessed — a product name, a commit format, a scoped "ask finance" rule, a line from
+  a `from` source.
 - **Read from the default branch** of the repository (or of the `from` repository) — never from the ref an agent is
   reading: text presented to an agent as instructions is a way to steer it, and anyone who can push a branch could
   write one; the default branch is the reviewed one. A repository not trusted that far sets `own: false`.
@@ -146,9 +152,9 @@ The public account is `docs/reference/safety.md`; each protection has a test tha
 - **Sizes**: every answer is capped (clients cut long answers — Claude Code near 25,000 tokens); a cut
   answer says so and how to narrow. Git's output is read up to a byte cap (4 MB; a file 10 MB) and the command
   stopped there; every parser drops a record the cap cut through, and the answer says it is partial.
-- **What `exclude` doesn't hide**: commit messages, and — in the history of a whole branch — commits that changed only
-  excluded paths. Open question for the author: list only commits that changed something served (messages stay free
-  text either way).
+- **What `exclude` doesn't hide**: commit messages (free text). A history leaves out commits that changed only excluded
+  paths (the author, 2026-10-24): `log --name-only --diff-merges=first-parent`, kept when any changed path is served
+  or nothing changed, paged after that choice.
 - **Read-only toward the hosts**: GET-only APIs, `git fetch`; never a push.
 
 ## Transports and clients

@@ -20,6 +20,8 @@ whole team.
 
 - **Read** a file, a folder, any branch, tag or commit — not only the default branch.
 - **History**: commits of a repository or a path, a commit with its diff, a diff between two refs, blame.
+- **Guidance for agents**: a repository's `AGENTS.md`, `CLAUDE.md`, rules and skills reach the agent reading it
+  — plus what the people who run the server add, from its configuration or from another repository.
 - **Search** across all configured repositories at once, and `grep` inside one.
 - **Any code host**: local paths, GitHub, GitLab, Bitbucket, any git server — mirrored on a schedule,
   fetching only what is read.
