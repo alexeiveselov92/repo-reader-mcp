@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# The docs site: dependencies, the build, and the pages sync-docs makes from docs/
+website/node_modules/
+website/dist/
+website/.astro/
+website/src/content/docs/

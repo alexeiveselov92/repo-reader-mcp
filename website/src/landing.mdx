@@ -1,0 +1,47 @@
+---
+title: repo-reader-mcp
+description: A read-only MCP server that lets any AI agent read code in git repositories — any branch, tag or commit, with its history — without ever changing them.
+template: splash
+hero:
+  tagline: A read-only MCP server that lets any AI agent read code in git repositories — any branch, tag or commit, with its history — and never changes them.
+  actions:
+    - text: Get started
+      link: /getting-started/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/alexeiveselov92/repo-reader-mcp
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <Card title="Any ref, with its history" icon="seti:git">
+    Files and folders at any branch, tag or commit; the history of a repository or a path; a commit with its diff; the
+    difference between two refs; who wrote each line, and why.
+  </Card>
+  <Card title="Read-only by construction" icon="approve-check">
+    A fixed set of reading git commands, no shell, an agent's ref resolved to a commit id before git sees it, no
+    network while reading. Every protection has a test that fails when it is taken out.
+  </Card>
+  <Card title="Any code host" icon="github">
+    Local repositories, and remote ones mirrored from GitHub, GitLab, Bitbucket or any git server — one by one, or a
+    whole group by a pattern, new repositories joining as they are created.
+  </Card>
+  <Card title="Only what you serve" icon="padlock">
+    `include` and `exclude` hold for every tool: a path left out is never listed, read, diffed or blamed — and on a
+    mirror, its contents never reach the server's disk.
+  </Card>
+  <Card title="Guidance for agents" icon="open-book">
+    A repository's `AGENTS.md`, `CLAUDE.md`, rules and skills reach the agent reading it — and what the people who run
+    the server add, for one repository or for all.
+  </Card>
+  <Card title="Any MCP client" icon="laptop">
+    stdio for one person's agent; Streamable HTTP behind a token for a whole team — Claude, Cursor, Codex, any client
+    that speaks MCP.
+  </Card>
+</CardGrid>
+
+**Status: pre-alpha.** It runs from a clone of the source. Search and a published package come next — [the
+plan](https://github.com/alexeiveselov92/repo-reader-mcp/blob/main/dev/PLAN.md).

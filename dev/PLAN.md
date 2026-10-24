@@ -35,7 +35,7 @@ with something visible: a real agent answering through the server.
 
 ## Milestone 3. The docs site — 1 session
 
-- [ ] `website/` — Astro + Starlight built from `docs/`, the author's detectkit pattern (`../detectkit/website`: the
+- [x] `website/` (2026-10-24) — Astro + Starlight built from `docs/`, the author's detectkit pattern (`../detectkit/website`: the
       `sync-docs` script importing `docs/`, the nginx Dockerfile, the `website.yml` workflow pushing the image to GHCR and
       sending `repository_dispatch` to pipelab).
 - [ ] In pipelab (`../pipelab`, under its own rules): the site at `repo-reader.pipelab.dev` — a compose service

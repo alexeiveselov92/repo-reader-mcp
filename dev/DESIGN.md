@@ -231,9 +231,13 @@ the MCP Inspector (the TypeScript SDK's client), over stdio and HTTP.
 
 ## Documentation, distribution and hosting
 
-- **Documentation**: `docs/` is the single source of the public documentation. A site is built from it with Astro +
-  Starlight (`website/`, the pattern of the author's detectkit: a `sync-docs` script imports `docs/` at build time,
-  served by nginx from an image) at `repo-reader.pipelab.dev` (proposed).
+- **Documentation**: `docs/` is the single source of the public documentation. The site is built from it with Astro +
+  Starlight (`website/`, built 2026-10-24 on the pattern of the author's detectkit: `scripts/sync-docs.mjs` imports
+  `docs/` and the changelog at build time — titles from each page's H1, links between pages rewritten to routes, links
+  to other files of the repository to GitHub, an "edit" link per page; a page of `docs/` it doesn't list stops the
+  build, and `tests/test_docs.py` checks the same; the landing page is `website/src/landing.mdx`), served by nginx
+  from an image (`website/Dockerfile`, pushed to GHCR by `.github/workflows/website.yml`, which then sends
+  `repository_dispatch: repo-reader-mcp-updated` to pipelab) at `repo-reader.pipelab.dev`.
 - **Distribution**: the package on PyPI (`uvx repo-reader-mcp`); a container image on GHCR
   (`ghcr.io/alexeiveselov92/repo-reader-mcp`); the site's image beside it (`ghcr.io/alexeiveselov92/repo-reader-mcp-web`).
 - **Hosting (the author's own)**: the author's server is run as code in `alexeiveselov92/pipelab` — Docker Compose

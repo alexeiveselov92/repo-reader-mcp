@@ -54,9 +54,9 @@ person-day estimates — sessions. Every session ends with something visible.
 ## The site and hosting
 
 - **The site** is built from `docs/` with Astro + Starlight in `website/` — the pattern of the author's detectkit
-  (`../detectkit/website` when the author's repositories sit side by side: its `sync-docs` script, its Dockerfile, its
-  `website.yml` workflow). It comes right after remote repositories (`dev/PLAN.md`, milestone 3), so the guide is read
-  on the web from the shared server on.
+  (`../detectkit/website` when the author's repositories sit side by side). `cd website && npm ci && npm run build`
+  builds it (`npm run dev` serves it while editing); `scripts/sync-docs.mjs` lists the pages — a new page of `docs/`
+  goes into its `PAGES` and the sidebar in `astro.config.mjs`, or the build and `tests/test_docs.py` fail.
 - **Hosting is the author's pipelab** (`../pipelab` beside it — private, with its own `CLAUDE.md`): a Docker Compose
   service behind Traefik per site and per server instance, secrets prefixed in GitHub, a `deploy-<name>.yml` that
   redeploys on this project's `repository_dispatch`. A change there follows pipelab's own rules — read its `CLAUDE.md`
