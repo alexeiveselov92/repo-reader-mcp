@@ -50,7 +50,13 @@ with something visible: a real agent answering through the server.
 - [x] A refuting review of the safety (a second reader whose job is to break it); every protection with a
       test that fails when it is removed (2026-10-24: 11 findings, all closed).
 
-## Milestone 5. Ready to deploy, proved by a real installation — 1 session
+## Milestone 5. The site's landing page — 1 session
+
+- [ ] A landing page like the author's detectkit site (`../detectkit/website/src/pages/index.astro`): a hero that says
+      what it is and shows it working, the sections a visitor scans (what it reads, safety, any host, any client), the
+      docs one click away — without detectkit's interactive UI. Built from facts the guide states; no made-up claims.
+
+## Milestone 6. Ready to deploy, proved by a real installation — 1 session
 
 - [ ] A container image of the server on GHCR (`ghcr.io/alexeiveselov92/repo-reader-mcp`), built by CI on every push:
       the configuration and the mirrors' folder mounted, secrets by environment; a health endpoint for a gateway or an
@@ -59,7 +65,7 @@ with something visible: a real agent answering through the server.
       there, never here. What it needs that the server lacks comes back as general requirements, shown with made-up
       examples. (pipelab hosts the docs site only, not an instance.)
 
-## Milestone 6. Release — 1 session
+## Milestone 7. Release — 1 session
 
 - [ ] Published on PyPI (`uvx repo-reader-mcp`), a container image, docs for agents and for people who
       run it; a versioned release.

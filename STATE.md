@@ -37,9 +37,10 @@
 - Real clients: Claude Code over stdio and HTTP, the MCP Inspector over both; an 18-repository public GitHub group;
   `search` answered a cross-repository question.
 
-## Next step — milestone 5
+## Next step — milestone 5: the site's landing page
 
-Ready to deploy: a container image of the server on GHCR (built by CI), a health endpoint, the guide's page on running
+A landing page like detectkit's site — a hero and the docs, not detectkit's UI (the author's order, 2026-10-24).
+Then milestone 6 — ready to deploy: a container image of the server on GHCR (built by CI), a health endpoint, the guide's page on running
 it in a container behind an MCP gateway — proved by a real installation that a company keeps in its own repositories
 (its configuration and deployment live there, never here; what it needs comes back here as general requirements).
 pipelab hosts the docs site only.
