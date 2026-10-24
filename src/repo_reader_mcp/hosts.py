@@ -74,6 +74,7 @@ class Listed:
     path: str  # acme/shop-api — for GitLab, the full path through its subgroups
     description: str | None
     archived: bool
+    fork: bool = False
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -212,7 +213,12 @@ def _github(host: Host, owner: str, token: str | None) -> list[Listed]:
                 address = f"{host.api}/user/repos?affiliation=owner&visibility=all&per_page={PAGE_SIZE}"
         items = _pages(address, token, host.api)
     return [
-        Listed(item["full_name"], _text(item.get("description")), bool(item.get("archived") or item.get("disabled")))
+        Listed(
+            item["full_name"],
+            _text(item.get("description")),
+            bool(item.get("archived") or item.get("disabled")),
+            bool(item.get("fork")),
+        )
         for item in items
         if isinstance(item.get("full_name"), str)
     ]
@@ -232,7 +238,12 @@ def _gitlab(host: Host, owner: str, subgroups: bool, token: str | None) -> list[
             raise
         items = _pages(f"{host.api}/users/{quote(owner, safe='')}/projects?{query}", token, host.api)
     return [
-        Listed(item["path_with_namespace"], _text(item.get("description")), bool(item.get("archived")))
+        Listed(
+            item["path_with_namespace"],
+            _text(item.get("description")),
+            bool(item.get("archived")),
+            bool(item.get("forked_from_project")),  # only a fork's listing has it
+        )
         for item in items
         if isinstance(item.get("path_with_namespace"), str)
     ]

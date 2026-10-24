@@ -426,3 +426,33 @@ async def test_links_say_their_kind_or_are_turned_off(host, tmp_path, shop):
     assert "On GitHub" not in text and "On GitLab" not in text
     with pytest.raises(Exception, match="links: it is for a remote repository"):
         parse_config({"repositories": [{"name": "shop", "path": str(shop[0]), "links": "github"}]}, tmp_path)
+
+
+# --- forks, and names two repositories of a group share -------------------------------------------------------------
+
+
+def test_forks_are_left_out_unless_asked_for(host, tmp_path):
+    host.api[ORG] = [github_item("acme/shop-api"), github_item("acme/shop-redis", fork=True)]
+    catalog = Catalog(grouped(host, tmp_path / "mirrors", GROUP))
+    catalog.refresh()
+    assert list(catalog) == ["shop-api"]
+    assert catalog.listings[0].left_out == ("acme/shop-redis: a fork (`forks: true` takes forks)",)
+    catalog = Catalog(grouped(host, tmp_path / "mirrors", {**GROUP, "forks": True}))
+    catalog.refresh()
+    assert list(catalog) == ["shop-api", "shop-redis"]
+
+
+def test_repositories_of_a_gitlab_group_that_share_a_name_are_all_served(host, tmp_path):
+    host.api["/api/v4/groups/acme%2Fbackend/projects"] = [
+        {"path_with_namespace": "acme/backend/api"},
+        {"path_with_namespace": "acme/backend/legacy/api"},
+        {"path_with_namespace": "acme/backend/team/svc"},
+        {"path_with_namespace": "acme/backend/team/upstream-lib", "forked_from_project": {"id": 7}},
+    ]
+    config = grouped(host, tmp_path / "mirrors", {"gitlab": "acme/backend/**", "token_env": "ACME_TOKEN"})
+    catalog = Catalog(config)
+    catalog.refresh()
+    assert list(catalog) == ["api", "legacy.api", "svc"]  # each of the two `api` by its path below the group
+    assert catalog["legacy.api"].mirror.remote.url == f"{host.base}/acme/backend/legacy/api.git"
+    assert "acme/backend/team/upstream-lib: a fork (`forks: true` takes forks)" in catalog.listings[0].left_out
+    assert list(Catalog(config)) == ["api", "legacy.api", "svc"]  # the kept listing, read again at a restart

@@ -98,6 +98,7 @@ def test_a_wrong_group_is_named(tmp_path, monkeypatch):
         ({"github": "acme/shop-*", "skip": ["other/shop-x"]}, "skip[0]: `other/shop-x` is not a repository of `acme`"),
         ({"github": "acme/*", "url": "https://example.com/a/b.git"}, "give one of `path`, `url`, `github`, `gitlab`"),
         ({"url": "https://example.com/a/web.git", "skip": ["x"]}, "skip: it goes with a group"),
+        ({"url": "https://example.com/a/web.git", "forks": True}, "forks: it goes with a group"),
         ({"github": "acme/*", "host": "http://git.example.com", "token_env": "ACME_TOKEN"}, "over https only"),
         ({"github": "acme/*", "host": "ftp://git.example.com"}, "a host's address is https://"),
         ({"github": "acme/*", "token_env": "UNSET_MADE_UP_TOKEN"}, "is not set in the server's environment"),

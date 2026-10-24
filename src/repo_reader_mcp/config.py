@@ -163,6 +163,7 @@ class RepositorySettings(_Strict):
     host: str | None = Field(default=None, min_length=1)
     skip: list[str] | None = Field(default=None, min_length=1)
     links: Literal["github", "gitlab", "bitbucket", "none"] | None = None
+    forks: bool | None = None
     token_env: str | None = Field(default=None, pattern=VARIABLE_PATTERN)
     token_user: str | None = Field(default=None, min_length=1, pattern=r"^[^:\s]+$")
     refs: list[str] | None = Field(default=None, min_length=1)
@@ -288,6 +289,7 @@ class Group:
     guidance: RepositoryGuidance = field(default_factory=RepositoryGuidance)
     matcher: Matcher = field(default_factory=Matcher)  # one for every member
     links: str | None = None  # the kind of the host's pages: the group's own unless `links` says otherwise
+    forks: bool = False  # whether forks are taken
 
     @property
     def label(self) -> str:
@@ -305,6 +307,11 @@ class Group:
         if not path.lower().startswith(prefix):
             return False
         return bool(compile_pattern("/" + self.pattern.lower()).fullmatch(path.lower()[len(prefix) :]))
+
+    def name_of(self, path: str, *, whole: bool = False) -> str:
+        """A member's name: its repository's own (`api`) — or, `whole`, its path below the owner (`legacy.api`), for
+        two in a group that share a name (GitLab's subgroups)."""
+        return path[len(self.owner) + 1 :].replace("/", ".") if whole else path.rsplit("/", 1)[-1]
 
     def skips(self, path: str) -> bool:
         """Whether `skip` leaves it out: an item with a `/` is matched against the full path, one without against the
@@ -487,6 +494,7 @@ def _group(repo: RepositorySettings, where: str, base: Path, problems: list[str]
         guidance,
         Matcher(repo.include, repo.exclude),
         repo.links,
+        bool(repo.forks),
     )
 
 
@@ -534,7 +542,7 @@ def parse_config(data: Any, base: Path, source: str = "") -> Config:
             continue
         name = repo.name or (name_from_url(repo.url) if repo.url else None)
         where = f"repositories[{i}]" + (f" ({name})" if name else "")
-        stray = [key for key in ("skip", "host") if getattr(repo, key) is not None]
+        stray = [key for key in ("skip", "host", "forks") if getattr(repo, key) is not None]
         if stray:
             problems.append(f"{where} → {stray[0]}: it goes with a group of repositories (`github:` or `gitlab:`)")
             continue

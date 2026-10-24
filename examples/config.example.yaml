@@ -30,6 +30,7 @@ repositories:
   - github: acme/billing-*               # a group: every repository of acme named billing-…, listed on every sync
     token_env: GITHUB_TOKEN
     skip: [billing-sandbox, "acme/billing-*-legacy"]   # names or patterns left out; archived ones leave by themselves
+    # forks: true                        # forks are left out unless this says so
     description: One of the billing services.
     exclude: ["*.pem", "*.env"]          # the entry's settings apply to every repository of it
 

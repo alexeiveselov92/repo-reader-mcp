@@ -90,7 +90,8 @@ repositories:
 
 **The host lists them on every sync.** Before each sync the server asks the host's API which repositories the owner
 has: a repository created since joins (its mirror is made at that sync), an **archived** one leaves, and so does one
-deleted, or one `skip` now names. Between two syncs the set stays as it was. The owner is a GitHub organisation or
+deleted, or one `skip` now names. **Forks** are left out — copies of others' code, mostly — unless the entry says
+`forks: true`; a fork your team works on can also be listed one by one. Between two syncs the set stays as it was. The owner is a GitHub organisation or
 user, or a GitLab group (only its own projects — not those shared with it from elsewhere) or user. A user's private
 repositories are listed when the token is that user's own.
 
@@ -125,6 +126,9 @@ What a group leaves out, and why, `--check` and the log say:
   later one is left out and the log says so. So is a repository **listed one by one under another name** (the same
   address, however spelt): it is served once, with its own entry's settings. A repository listed one by one is how one member gets settings of its own:
   `skip` it in the group and list it by its `url`.
+- **Two repositories of one group with the same name** — projects in different GitLab subgroups, `acme/backend/api` and
+  `acme/backend/legacy/api` — are both served, each named by its path below the group's owner: `api`, `legacy.api`.
+  (The name of one changes when the other appears; the log says so.)
 - **A name this server can't serve** (one starting with a dot, like `.github`) is left out.
 - **A group's repository can't be a [guidance](reference/guidance.md) source** (`from`): a source is listed one by one,
   so it never comes and goes with a listing.

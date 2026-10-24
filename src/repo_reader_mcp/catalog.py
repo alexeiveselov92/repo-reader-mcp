@@ -15,6 +15,7 @@ import os
 import re
 import threading
 import time
+from collections import Counter
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -62,27 +63,37 @@ def _now() -> str:
 
 
 def resolve(group: Group) -> Listing:
-    """The group's members, as its host lists them now: taken by the pattern, less `skip`, archived repositories and
-    names this server can't serve."""
+    """The group's members, as its host lists them now: taken by the pattern, less `skip`, archived repositories, forks
+    (unless `forks: true`) and names this server can't serve. Each is named by its repository's name — or, where two
+    share one (projects in GitLab's subgroups), each of those by its path below the owner: none is left out for it."""
     token = None
     if group.token_env:
         token = os.environ.get(group.token_env)
         if not token:
             raise HostError(f"the variable {group.token_env} is not set in the server's environment")
     found = list_repositories(group.host, group.owner, subgroups=group.subgroups, token=token)
-    members, left_out = [], []
+    taken, left_out = [], []
     for item in sorted(found, key=lambda each: each.path.lower()):
         if not group.takes(item.path):
             continue
-        name = item.path.rsplit("/", 1)[-1]
         if group.skips(item.path):
             left_out.append(f"{item.path}: skipped")
         elif item.archived:
             left_out.append(f"{item.path}: archived")
-        elif not plain_path(item.path) or not re.fullmatch(NAME_PATTERN, name):
+        elif item.fork and not group.forks:
+            left_out.append(f"{item.path}: a fork (`forks: true` takes forks)")
+        elif not plain_path(item.path):
             left_out.append(f"{item.path}: its name can't name a repository here")
         else:
+            taken.append(item)
+    shared = Counter(group.name_of(item.path).lower() for item in taken)
+    members = []
+    for item in taken:
+        name = group.name_of(item.path, whole=shared[group.name_of(item.path).lower()] > 1)
+        if re.fullmatch(NAME_PATTERN, name):
             members.append(Member(name, item.path, item.description))
+        else:
+            left_out.append(f"{item.path}: its name can't name a repository here")
     return Listing(tuple(members), tuple(left_out), _now())
 
 
@@ -100,7 +111,9 @@ def identity(url: str) -> tuple[str, str]:
 
 def listing_file(folder: str, group: Group) -> Path:
     """Where a group's last listing is kept: named by the group, and by what decides its members."""
-    made_of = json.dumps([group.kind, group.host.api, group.owner, group.pattern, sorted(group.skip), group.token_env])
+    made_of = json.dumps(
+        [group.kind, group.host.api, group.owner, group.pattern, sorted(group.skip), group.token_env, group.forks]
+    )
     slug = re.sub(r"[^A-Za-z0-9._-]+", ".", group.owner)
     return Path(folder) / f"{group.kind}-{slug}-{hashlib.sha256(made_of.encode()).hexdigest()[:12]}.members.json"
 
@@ -114,7 +127,7 @@ def _load(file: Path, group: Group) -> Listing:
             Member(each["name"], each["path"], each.get("description"))
             for each in data.get("members", ())
             if plain_path(each.get("path", ""))
-            and each.get("name") == each["path"].rsplit("/", 1)[-1]
+            and each.get("name") in (group.name_of(each["path"]), group.name_of(each["path"], whole=True))
             and re.fullmatch(NAME_PATTERN, each["name"])
             and group.takes(each["path"])
             and not group.skips(each["path"])

@@ -175,8 +175,12 @@ listing; no redirect is followed and a next page must stay on the API — the to
 listing is kept on disk, so a restart serves at once and a host that can't be reached changes nothing. A group's
 repository can't be a guidance source: a source should not come and go with a listing.
 
-**Waiting for the author**: whether forks should be left out by default, and whether two members with the same name in
-different GitLab subgroups should get longer names rather than the second being left out.
+**Settled** (the author asked Claude to choose): **forks are left out** unless the entry says `forks: true` — in a
+group like `acme/*` they are mostly copies of others' libraries: disk, sync time and answers about code the team doesn't
+write; a fork the team works on is taken by `forks: true` or listed one by one. **No repository is left out for its
+name**: two members of one group sharing a name (projects in different GitLab subgroups) are each named by their path
+below the owner (`api`, `legacy.api`) — losing a repository silently is worse than a name that changes when its twin
+appears, which only list_repos shows and the log says.
 
 ## 2026-10-24 · A mirror's digest includes the token's variable
 
