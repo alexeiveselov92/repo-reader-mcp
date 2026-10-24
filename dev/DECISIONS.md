@@ -244,3 +244,20 @@ do, and gitleaks finds secrets to report, while this hides them inline — leani
 by mistake costs a look at the host and a value shown costs a rotation. Central rather than per tool: a tool added
 later can't forget it. No off switch: a switch is how a leak gets configured. Known limit, documented: a secret with no
 recognisable shape, in no setting named for one, is not seen — `exclude` keeps such files out.
+
+## 2026-10-24 · The third refuting review's findings (search and secrets; all closed, each with a test)
+
+The oracle check re-ran the agent's regex in Python on the hidden line, so an alternation matching the gap a hidden
+value left (`""|hunter2024`) confirmed a guess and read a secret out a character at a time — through grep, search and
+log by message, and a pattern Python couldn't compile skipped the check. Now no agent pattern is matched again: a regex
+never matches a line holding a hidden value, a plain text only where an occurrence is clear of the hidden spans
+(found on the line as written), a commit whose message holds one isn't found by message; the answer is rebuilt as git
+would have given it without the dropped lines (no `--max-count` before filtering, context around kept matches only),
+so neither a missing match nor the lines around tell. A key written on one line in base64 (a kubeconfig), key lines in
+diffs (the `+` counted as base64) and Redis-style URL passwords came through — hidden now (base64 runs without an upper
+bound, `LS0tLS1CRUdJTi`, `hide_patch`, spans for URLs). A key marker inside code hid the rest of the file — markers
+stand on their own lines and a block ends at the first line that isn't a key's. The credential rule made every
+repository walk whole trees in list_files and whole histories in log — both use their fast paths unless include /
+exclude are set. A command line too long crashed search for every repository — batches by size, and a failure to start
+git is git's error. Hiding could push an answer past its limit — cut. Fewer false positives (prose, addresses,
+`tokenizer:`), more credential names.

@@ -29,12 +29,11 @@ async def test_search_finds_text_across_repositories(shop):
 
 
 async def test_search_never_looks_where_exclude_keeps_out(shop):
-    config = two(shop[0], exclude=["secrets"])
-    text, _ = await ask(config, "search", pattern="API_KEY")
+    config = two(shop[0], exclude=["config"])
+    text, _ = await ask(config, "search", pattern="currency: EUR")
     assert "## shop" in text and "## copy" not in text  # found in the repository serving it, not in the other
-    assert "secrets/prod.env\n  1: API_KEY=[hidden: secret value]" in text
-    text, _ = await ask(config, "search", pattern="API_KEY", repos=["copy"])
-    assert "no line matches" in text and "secrets/prod.env" not in text
+    text, _ = await ask(config, "search", pattern="currency: EUR", repos=["copy"])
+    assert "no line matches" in text and "config/settings.yml" not in text
 
 
 async def test_search_narrows_by_repository_path_and_case(shop):
@@ -64,8 +63,8 @@ async def test_grep_shows_lines_around_a_match_at_any_ref(shop):
     assert not error, text
     assert "shop · grep `mode = classic` · v0.2 @ " in text and "1 matching line in 1 file" in text
     assert "config/legacy.ini\n  1- [old]\n  2: mode = classic" in text
-    text, _ = await ask(config, "grep", repo="shop", pattern="DISCOUNT_KEY", ref=ids["discounts"], files_only=True)
-    assert "1 file match" in text and "secrets/prod.env" in text
+    text, _ = await ask(config, "grep", repo="shop", pattern="def discounted", ref=ids["discounts"], files_only=True)
+    assert "1 file match" in text and "src/shop/pricing.py" in text
 
 
 async def test_grep_refuses_a_path_kept_out_and_odd_patterns(shop):

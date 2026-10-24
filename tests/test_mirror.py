@@ -54,11 +54,13 @@ def test_a_first_sync_makes_a_partial_mirror(remote, tmp_path):
     cfg = mirrored(f"file://{remote}", tmp_path / "mirrors", refs=["main"])
     mirror = mirror_of(cfg)
     assert not mirror.ready
-    assert mirror.sync() == "mirrored for the first time — 1 branch, 0 tags, 12 files' contents"
+    # 11: secrets/prod.env is named for credentials, so never fetched
+    assert mirror.sync() == "mirrored for the first time — 1 branch, 0 tags, 11 files' contents"
     assert mirror.ready and mirror.git_dir.parent == tmp_path / "mirrors"
     # The whole history of main, but the contents of only the files at its tip.
     assert git(mirror.git_dir, "rev-list", "--count", "main") == git(remote, "rev-list", "--count", "main")
-    at_tip = {line.split()[2] for line in git(remote, "ls-tree", "-r", "main").splitlines()}
+    listing = [line.split(None, 3) for line in git(remote, "ls-tree", "-r", "main").splitlines()]
+    at_tip = {oid for _, _, oid, path in listing if not path.endswith(".env")}
     assert blobs_in(mirror.git_dir) == at_tip
     assert mirror.sync() == "up to date"
 

@@ -20,7 +20,7 @@ from .config import Config
 from .guidance import Guide, render, render_one
 from .paths import PathError, clean_path, under
 from .repository import BATCH, At, Change, Entry, Hit, ReadError, Repository
-from .secrets import hidden_count, hide, hide_lines
+from .secrets import hidden_count, hide, hide_lines, hide_patch
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False)
 
@@ -105,12 +105,16 @@ def _hidden_text(text: str) -> str:
     return "\n".join(hide(line) for line in text.split("\n"))
 
 
-def shown(text: str) -> str:
-    """An answer as an agent gets it: secrets hidden, and a note saying how many."""
+def shown(text: str, limit: int) -> str:
+    """An answer as an agent gets it: secrets hidden, a note saying how many — and still within the limit, which a
+    hidden value's mark (longer than some values) could have pushed it past."""
     text = _hidden_text(text)
     count = hidden_count(text)
     if not count:
         return text
+    room = limit - HIDDEN_NOTE_RESERVE
+    if len(text) > room:
+        text = text[: text.rfind("\n", 0, room) + 1] + "\n[cut: hiding secrets made the answer longer than fits]\n"
     return text.rstrip("\n") + (
         f"\n\n[{_plural(count, 'value')} that look{'s' if count == 1 else ''} like secrets "
         f"{'is' if count == 1 else 'are'} hidden as `[hidden: …]` — this server never shows them.]\n"
@@ -196,7 +200,7 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
                     due = guide.due(name, path_of(path, allow_root=True) if path else None)[: limit // 2]
                 token = BUDGET.set(limit - len(due) - HIDDEN_NOTE_RESERVE)
                 try:
-                    return shown(due + fn(*args, **kwargs))
+                    return shown(due + fn(*args, **kwargs), limit)
                 finally:
                     BUDGET.reset(token)
             except ReadError as error:
@@ -370,11 +374,12 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
         where = f"{folder}/" if folder else "the root"
         prefix = f"{folder}/" if folder else ""
         folders: list[str] = []
-        if not recursive and r.matcher.takes_everything:
-            # Nothing is held back, so git lists the folder's own entries without walking the tree under it.
+        if not recursive and not r.matcher.configured:
+            # No include / exclude: git lists the folder's own entries without walking the tree under it — the rule
+            # for files named for credentials reads a name alone, so it applies to them as they are.
             entries, cut = r.children(at, folder)
             folders = sorted(e.path + "/" for e in entries if e.kind == "tree")
-            files = [e for e in entries if e.kind != "tree"]
+            files = [e for e in entries if e.kind != "tree" and r.matcher.allows(e.path)]
         else:
             found, cut = served_files(r, at, folder)
             files = [f for f in found if under(f.path, folder) and f.path != folder]
@@ -432,17 +437,17 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
         at = r.resolve(ref)
         clean = scope(r, at, path)
         asked = dict(path=clean, author=author, since=since, until=until, message=message)
-        held_back = not r.matcher.takes_everything
+        held_back = r.matcher.configured  # files named for credentials alone don't make a history walk every commit
         if held_back:
             # Only commits that changed something served (or nothing at all): one that changed only paths outside
             # include / exclude is not told — paged here, after that choice, so `skip` counts what the agent sees.
             found, unread = r.log(at, **asked, count=None, with_paths=True)
-            found = r.still_say(found, message) if message else found
+            found = r.still_say(found) if message else found
             seen = [c for c in found if not c.paths or any(r.matcher.allows(p) for p in c.paths)]
             commits = seen[skip : skip + max_count + 1]
         else:
             commits, unread = r.log(at, **asked, count=max_count + 1, skip=skip)
-            commits = r.still_say(commits, message) if message else commits
+            commits = r.still_say(commits) if message else commits
         more = len(commits) > max_count or unread
         commits = commits[:max_count]
         filters = [f"of {clean}" if clean else ""]
@@ -516,7 +521,7 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
             if not batch:
                 continue
             out = r.patch(base, head, batch, answer.left, whole=whole)
-            for line in _lines(out.data):
+            for line in hide_patch(_lines(out.data)):
                 if not answer.add(_cut_line(line)):
                     break
             if out.cut or answer.full:

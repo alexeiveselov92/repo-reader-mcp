@@ -200,6 +200,8 @@ config/settings.yml
   1: currency: EUR
 ```
 
+Where a line holds a value that looks like a secret, it is shown hidden, and a match is kept only where the plain
+text lies outside it — with `regex`, a line holding one never matches ([safety](safety.md#secrets-found-in-files-are-hidden)).
 Search reads the repositories as they are — no index to build or wait for. To read around a match, call `read_file` with
 its `start_line`; to search one repository at another ref, or with lines of context, use `grep`.
 

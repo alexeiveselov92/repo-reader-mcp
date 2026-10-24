@@ -77,7 +77,7 @@ def trap(tmp_path_factory) -> tuple[Path, Path]:
 
 @pytest.mark.parametrize("args", [["push"], ["config", "core.editor", "x"], ["checkout", "main"], []])
 def test_only_commands_from_the_fixed_set_are_run(args):
-    with pytest.raises(GitError):
+    with pytest.raises(GitError, match="is not a command this server runs"):
         command("/nowhere", args)
 
 
@@ -283,7 +283,7 @@ def remote_config(url: str, folder: Path, **settings):
 
 @pytest.mark.parametrize("args", [["fetch", "origin"], ["ls-remote", "origin"], ["clone", "x"], ["config", "a", "b"]])
 def test_a_reading_command_can_t_reach_a_host(args):
-    with pytest.raises(GitError):
+    with pytest.raises(GitError, match="is not a command this server runs"):
         command("/nowhere", args)
     line = command("/nowhere", ["log"])
     assert "protocol.allow=never" in line and not any(part.endswith(".allow=always") for part in line)
@@ -291,7 +291,7 @@ def test_a_reading_command_can_t_reach_a_host(args):
 
 @pytest.mark.parametrize("args", [["push", "origin"], ["gc"], ["checkout", "main"], ["clone", "x"], ["remote", "add"]])
 def test_the_sync_runs_only_its_own_commands(args):
-    with pytest.raises(GitError):
+    with pytest.raises(GitError, match="is not a command this server runs"):  # refused before git starts
         git_module.maintain("/nowhere", args)
 
 

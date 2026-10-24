@@ -20,13 +20,15 @@ from .config import RepositoryConfig
 from .git import OID as HEX
 from .git import GitError, Output, run
 from .mirror import Mirror, SyncError
-from .secrets import MARK, hide
+from .secrets import MARK, hide, outside
+from .secrets import spans as secret_spans
 
 BATCH = 100  # paths per git call when a command is limited to some files
 BLAME_HOPS = 8  # renames with changes blame is helped through on a mirror
 GREP_BATCH = 2000  # files named to one git grep
+GREP_BATCH_BYTES = 100_000  # and their names' length: a command line has a limit
 SERVED_KEPT = 32  # commits whose list of served files is kept, per repository
-KEY_MARKERS = r"-----(BEGIN|END) [A-Z0-9 ]*PRIVATE KEY"
+KEY_MARKERS = r"^[[:space:]]*[\"']?-----(BEGIN|END) [A-Z0-9 ]*PRIVATE KEY"
 GREP_LINE = re.compile(r"^(\d+)([:-])(.*)$", re.DOTALL)
 SUBMODULE = "160000"
 EMPTY_TREE = {
@@ -166,11 +168,13 @@ class Repository:
         self._served: OrderedDict[str, tuple[list[Entry], bool]] = OrderedDict()
         self._served_lock = threading.Lock()
 
-    def git(self, *args: str, limit: int | None = None, ok_codes: tuple[int, ...] = (0,)) -> Output:
+    def git(
+        self, *args: str, limit: int | None = None, ok_codes: tuple[int, ...] = (0,), input: bytes | None = None
+    ) -> Output:
         if self.mirror is not None and not self.mirror.ready:
             raise ReadError(f"{self.name} can't be read yet. {self.mirror.describe()}")
         try:
-            return run(self.config.git_dir, args, limit=limit, ok_codes=ok_codes)
+            return run(self.config.git_dir, args, limit=limit, ok_codes=ok_codes, input=input)
         except GitError as error:
             # How git says contents are missing from a partial clone: by the fetch it is refused (older git), or —
             # with lazy fetching off (git 2.44 and later) — by saying so, or that the object is a bad file.
@@ -316,12 +320,19 @@ class Repository:
 
     def _grep(self, at: At, options: list[str], paths: list[str], limit: int | None) -> tuple[list[Hit], bool]:
         """`git grep` with some options over some files at a commit, named one by one and literally — git reads no
-        other file. Its hits, and whether the output was cut."""
+        other file — in batches a command line takes. Its hits, and whether the output was cut."""
         known = {_quoted(path): path for path in paths}
         hits: list[Hit] = []
-        for start in range(0, len(paths), GREP_BATCH):
-            args = ["grep", "-I", "--no-color", "-n", "--heading", "--break", *options, at.commit, "--"]
-            out = self.git(*args, *paths[start : start + GREP_BATCH], limit=limit, ok_codes=(0, 1))
+        batch: list[str] = []
+        size = 0
+        for i, path in enumerate(paths):
+            batch.append(path)
+            size += len(path.encode()) + 1
+            if len(batch) < GREP_BATCH and size < GREP_BATCH_BYTES and i < len(paths) - 1:
+                continue
+            args = ["grep", "-I", "--no-color", "-n", "--heading", "--break", *options, at.commit, "--", *batch]
+            out = self.git(*args, limit=limit, ok_codes=(0, 1))
+            batch, size = [], 0
             current = None
             for line in records(out, "\n"):
                 if line.startswith(at.commit + ":"):
@@ -348,13 +359,11 @@ class Repository:
     ) -> tuple[list[Hit], bool]:
         """The lines matching a pattern in some files at a commit, with `context` lines around each — and whether the
         output was cut. The files are named one by one: what include / exclude keep out is never searched (on a mirror,
-        never needed). Binary files are skipped. Lines are as an agent may see them: a private key's block and values
-        that look like secrets hidden — and a match found only inside a hidden value dropped, so a guessed secret
-        can't be confirmed by searching for it."""
+        never needed). Binary files are skipped. Lines are as an agent may see them (`_as_seen`)."""
         if not files:
             return [], False
         self.ensure([(e.oid, e.path) for e in files])
-        options = ["--max-count", str(per_file), "-E" if regex else "-F", *(["-i"] if ignore_case else [])]
+        options = ["-E" if regex else "-F", *(["-i"] if ignore_case else [])]
         options += ["-C", str(context)] if context else []
         try:
             hits, cut = self._grep(at, [*options, "-e", pattern], [e.path for e in files], limit)
@@ -362,37 +371,50 @@ class Repository:
             if "-e option" in str(error) or "command line" in str(error) or "regex" in str(error).lower():
                 raise ReadError(f"`{pattern}` is not a regular expression git reads: {error}") from None
             raise
-        return self._hidden(at, hits, pattern, regex=regex, ignore_case=ignore_case), cut
+        return self._as_seen(at, hits, pattern, regex, ignore_case, context, per_file), cut
 
-    def _hidden(self, at: At, hits: list[Hit], pattern: str, *, regex: bool, ignore_case: bool) -> list[Hit]:
+    def _as_seen(
+        self, at: At, hits: list[Hit], pattern: str, regex: bool, ignore_case: bool, context: int, per_file: int
+    ) -> list[Hit]:
+        """Hits as an agent may see them. A private key's body and values that look like secrets are hidden. A match
+        is kept only where it lies outside every hidden value — for a regular expression, only on a line holding none
+        (git's dialect isn't Python's, so it is never matched again here); a fixed text, where an occurrence of it is
+        clear of them. Then the answer is what git would have given had the dropped lines not matched: at most
+        `per_file` matches a file, and the context lines around those alone — so a guessed secret can't be confirmed,
+        by a match, a missing match or the lines around it."""
         if not hits:
             return hits
-        found, _ = self._grep(at, ["-E", "-e", KEY_MARKERS], sorted({h.path for h in hits}), None)
+        markers, _ = self._grep(at, ["-E", "-e", KEY_MARKERS], sorted({h.path for h in hits}), None)
         blocks: dict[str, list[tuple[int, float]]] = {}
-        for marker in found:
+        for marker in markers:
             spans = blocks.setdefault(marker.path, [])
             if "BEGIN" in marker.text and (not spans or spans[-1][1] != float("inf")):
                 spans.append((marker.number, float("inf")))
             elif "END" in marker.text and spans and spans[-1][1] == float("inf"):
                 spans[-1] = (spans[-1][0], marker.number)
 
-        def still_matches(text: str) -> bool:
-            plain = re.sub(r"\[hidden: [^\]]*\]", "", text)
-            if regex:
-                try:
-                    return re.search(pattern, plain, re.IGNORECASE if ignore_case else 0) is not None
-                except re.error:
-                    return False
-            return pattern.lower() in plain.lower() if ignore_case else pattern in plain
+        def in_key(hit: Hit) -> bool:
+            return any(first < hit.number < last for first, last in blocks.get(hit.path, ()))
 
-        kept = []
+        def stands(hit: Hit) -> bool:
+            if not hit.match or in_key(hit):
+                return False
+            if not secret_spans(hit.text):
+                return True
+            return not regex and outside(hit.text, pattern, ignore_case=ignore_case)
+
+        kept: dict[str, list[int]] = {}
         for hit in hits:
-            inside = any(first < hit.number < last for first, last in blocks.get(hit.path, ()))
-            text = MARK.format("private key") if inside else hide(hit.text)
-            if hit.match and text != hit.text and not still_matches(text):
-                continue
-            kept.append(replace(hit, text=text))
-        return kept
+            if stands(hit) and len(kept.setdefault(hit.path, [])) < per_file:
+                kept[hit.path].append(hit.number)
+        seen = []
+        for hit in hits:
+            near = kept.get(hit.path, [])
+            match = hit.number in near
+            if match or any(abs(hit.number - n) <= context for n in near):
+                text = MARK.format("private key") if in_key(hit) else hide(hit.text)
+                seen.append(Hit(hit.path, hit.number, text, match))
+        return seen
 
     def blob(self, entry: Entry, limit: int) -> Output:
         self.ensure([(entry.oid, entry.path)])
@@ -436,7 +458,7 @@ class Repository:
         if until:
             args.append(f"--until={until}")
         if message:
-            args += [f"--grep={message}", "--extended-regexp"]  # read as Python reads it, for `still_say`
+            args += [f"--grep={message}", "--extended-regexp"]
         if author or message:
             args.append("--regexp-ignore-case")
         args += [at.commit, "--", *([path] if path else [])]
@@ -450,21 +472,20 @@ class Repository:
                 entries.append(LogEntry(*parts, paths=paths))
         return entries, out.cut
 
-    def still_say(self, entries: list[LogEntry], pattern: str) -> list[LogEntry]:
-        """Of the commits git found by a message pattern, those whose message still says it with its secrets hidden —
-        so a guessed secret can't be confirmed by searching messages for it."""
+    def still_say(self, entries: list[LogEntry]) -> list[LogEntry]:
+        """Of the commits git found by a message pattern, those whose message holds no value that looks like a secret:
+        git may have matched inside one, and its pattern is never matched again here — so a guessed secret can't be
+        confirmed by searching messages for it. (A commit whose message holds a secret isn't found by its message.)"""
         if not entries:
             return entries
-        out = self.git("log", "--no-walk=unsorted", "--format=%H%x00%B%x01", *(e.commit for e in entries))
-        messages = {}
+        ids = "".join(e.commit + "\n" for e in entries).encode()
+        out = self.git("log", "--no-walk=unsorted", "--stdin", "--format=%H%x00%B%x01", input=ids)
+        clean = set()
         for record in out.text.split("\x01"):
             commit, _, body = record.strip("\n").partition("\x00")
-            messages[commit] = re.sub(r"\[hidden: [^\]]*\]", "", "\n".join(hide(line) for line in body.split("\n")))
-        try:
-            wanted = re.compile(pattern, re.IGNORECASE)
-        except re.error:
-            return entries
-        return [e for e in entries if wanted.search(messages.get(e.commit, ""))]
+            if commit and not any(secret_spans(line) for line in body.split("\n")):
+                clean.add(commit)
+        return [e for e in entries if e.commit in clean]
 
     def commit(self, at: At) -> CommitInfo:
         out = self.git("log", "-1", f"--format=%H{SEP}%P{SEP}%an{SEP}%aI{SEP}%cn{SEP}%cI{SEP}%B", at.commit, "--").text

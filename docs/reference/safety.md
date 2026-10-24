@@ -168,24 +168,29 @@ Every answer, and every error, passes through a filter that replaces each value 
 ```
 
 - **What it hides**: providers' keys and tokens by their own formats (AWS, GitHub, GitLab, Slack, Stripe, Google,
-  OpenAI, Anthropic, npm, Telegram, JWTs); the password in `scheme://user:password@host`; the lines of a private key —
-  its whole block where the file is at hand (`read_file`, `blame`, `search`, `grep`), and any line of key material
-  elsewhere; a value given to a setting named for a secret (`password`, `secret`, `token`, `api_key`, `access_key`,
+  OpenAI, Anthropic, npm, Telegram, JWTs); the password in `scheme://user:password@host` (an empty user too, as Redis
+  writes it); a private key — its whole block where the file is at hand (`read_file`, `blame`, `search`, `grep`, and
+  a diff, back to the hunk's start when the hunk begins inside it), a key written on one line in base64 (as a
+  kubeconfig holds it), and any run of key material elsewhere; a value given to a setting named for a secret (`password`, `secret`, `token`, `api_key`, `access_key`,
   `private_key` — `API_KEY=…`, `"client_secret": "…"`) unless it is a reference or a placeholder (`os.environ[…]`,
   `${VAR}`, `changeme`, a name); a password written in prose ("the password is …").
 - **Everywhere**: files, blame, diffs and commits, histories' messages, search and grep hits, guidance — the filter is
   the last thing every tool's answer passes through, so a tool added later can't skip it.
-- **A guessed secret can't be confirmed**: a line that `search` or `grep` found only inside a hidden value is left out,
-  and so is a commit `log` found by its message only inside one — searching for a value can't tell whether the
-  repository holds it.
+- **A guessed secret can't be confirmed** — by a match, a missing one, or the lines around it. A plain text `search` or
+  `grep` found is kept only where an occurrence of it lies clear of the hidden values; a regular expression never
+  matches a line holding one (the server doesn't match it again in another dialect, which could be tricked into
+  matching the gap a hidden value leaves). The answer is then what git would have given had the dropped lines not
+  matched: the limit of matches a file counted after them, the lines around the matches kept alone. A commit whose
+  message holds a hidden value isn't found by `log`'s `message` at all.
 - **The rules lean towards hiding**: a value hidden by mistake (a long base64 line, a test fixture shaped like a key)
   costs a look at the host; a value shown costs a rotation. What they can't see is not hidden: a secret with no
   recognisable shape, in no setting named for one — keep such files out with `exclude`.
 
 ## Files named for credentials are never served
 
-`.env` (and `.env.local`, `.env.production`… — not `.env.example`, `.env.sample`, `.env.template`), `*.pem`, `*.key`,
-`*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.kdbx`, `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519`, `.netrc`, `.pgpass`,
-`.pypirc` are treated as `exclude` takes them, in every repository: never listed, read, searched or diffed — and never
+`.env` (and `.env.local`, `.env.production`… — not `.env.example`, `.env.sample`, `.env.template`), `*.env`, `.envrc`,
+`*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.kdbx`, `*.ppk`, `*.tfstate`, `id_rsa`, `id_dsa`,
+`id_ecdsa`, `id_ed25519` (and `id_rsa_github`…, not `.pub`), `.netrc`, `.pgpass`, `.pypirc`, `.git-credentials` are
+treated as `exclude` takes them, in every repository: never listed, read, searched or diffed — and never
 fetched into a mirror. A repository whose such files are meant to be read says `serve_credential_files: true`; the
 secrets in them are still hidden.

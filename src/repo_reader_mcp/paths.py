@@ -69,8 +69,9 @@ def compile_pattern(pattern: str) -> re.Pattern[str]:
 # Files named for credentials (docs/reference/safety.md): never served, never fetched — unless a repository's entry
 # says `serve_credential_files: true`. `.env.example` and its kind are templates, and served.
 CREDENTIAL_FILES = re.compile(
-    r"(?i)^(?:\.env(?:\.(?!(?:example|sample|template|dist|defaults?)$)[^/]+)?|id_(?:rsa|dsa|ecdsa|ed25519)"
-    r"|\.netrc|\.pgpass|\.pypirc|.+\.(?:pem|key|p12|pfx|jks|keystore|kdbx))$"
+    r"(?i)^(?:\.env(?:\.(?!(?:example|sample|template|dist|defaults?)$)[^/]+)?|.+\.env|\.envrc"
+    r"|id_(?:rsa|dsa|ecdsa|ed25519)(?:_[^./]+)?|\.netrc|\.pgpass|\.pypirc|\.git-credentials"
+    r"|.+\.(?:pem|key|p12|pfx|jks|keystore|kdbx|ppk|tfstate|tfstate\.backup))$"
 )
 
 

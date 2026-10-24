@@ -161,7 +161,14 @@ def find_git_dir(path: str) -> str:
     return git_dir
 
 
-def run(git_dir: str, args: Sequence[str], *, limit: int | None = None, ok_codes: Sequence[int] = (0,)) -> Output:
+def run(
+    git_dir: str,
+    args: Sequence[str],
+    *,
+    limit: int | None = None,
+    ok_codes: Sequence[int] = (0,),
+    input: bytes | None = None,
+) -> Output:
     """Run one reading git command in a repository and return what it printed.
 
     Reading stops after `limit` bytes (`OUTPUT_BYTES` unless a call asks for another) — the command is stopped and the
@@ -169,7 +176,7 @@ def run(git_dir: str, args: Sequence[str], *, limit: int | None = None, ok_codes
     """
     # GIT_NO_LAZY_FETCH (git 2.44 and later): a missing object is never fetched, whatever the configuration says.
     env = environment({"GIT_NO_LAZY_FETCH": "1"})
-    return _execute(command(git_dir, args), git_dir, env, limit=limit, ok_codes=ok_codes)
+    return _execute(command(git_dir, args), git_dir, env, limit=limit, ok_codes=ok_codes, input=input)
 
 
 def maintain(
@@ -207,7 +214,10 @@ def _execute(
             given.write(input)
             given.seek(0)
         stdin = given if input is not None else subprocess.DEVNULL
-        proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=stdin, stdout=subprocess.PIPE, stderr=err)
+        try:
+            proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=stdin, stdout=subprocess.PIPE, stderr=err)
+        except OSError as error:  # a command line longer than the system takes, and the like
+            raise GitError(f"git could not be started: {error.strerror or error}") from None
         timed_out = threading.Event()
 
         def stop() -> None:

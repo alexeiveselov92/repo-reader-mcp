@@ -42,13 +42,13 @@ with something visible: a real agent answering through the server.
       behind Traefik and its `deploy-*.yml`, as detectkit's site is served.
 - [x] The guide as it stands after milestone 2 published there (2026-10-24, https://repo-reader.pipelab.dev); from now on every milestone's pages go live with it.
 
-## Milestone 4. Search and safety — 2 sessions
+## Milestone 4. Search and safety — ✅ 2026-10-24
 
 - [x] `search` across repositories, `grep` in one at any ref (2026-10-24: `git grep` over the served files, no index —
       measured 0.2–0.4 s over 18 repositories; an index waits until numbers ask for one).
 - [x] The secret scan before serving; files named for credentials never fetched (2026-10-24).
-- [ ] A refuting review of the safety (a second reader whose job is to break it); every protection with a
-      test that fails when it is removed.
+- [x] A refuting review of the safety (a second reader whose job is to break it); every protection with a
+      test that fails when it is removed (2026-10-24: 11 findings, all closed).
 
 ## Milestone 5. The author's server instance — 1 session
 
