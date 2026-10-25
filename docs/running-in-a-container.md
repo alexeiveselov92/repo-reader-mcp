@@ -86,7 +86,8 @@ server behind one:
 - **Give the server the gateway's own key** as its bearer token (`http.token_env`). Gateways usually drop the caller's
   `Authorization` and send a key of their own to each backend. With that key as the token, a request that reaches
   the server around the gateway is refused. If only the gateway can reach the server (a network policy),
-  `http.behind_gateway: true` serves without a token.
+  `http.behind_gateway: true` serves without a token. Without such a policy, prefer the token: another server
+  behind the same gateway that fetches URLs for agents could reach this one too, around the gateway's rules.
 - **Send traffic once ready.** Gate the backend on `/health`. While it syncs, the server still answers `initialize`
   and every tool. A mirror not made yet says so instead of reading.
 - **No request waits for a sync.** Syncs run in the background. Each git command behind an answer is stopped after
@@ -99,6 +100,10 @@ configurations and let the gateway decide who reaches which.
 
 A gateway may rename the tools (`code__read_file`). The server's answers still name them by their own names
 (`read_guidance(repo="…")`), and agents follow them either way.
+
+A gateway may also answer `initialize` itself, for all its servers at once, and pass on none of a server's
+instructions. Nothing here depends on them. Each tool's description says what the tool needs, and every answer about a
+repository that carries guidance says so.
 
 ## Docker Compose
 

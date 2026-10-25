@@ -4,6 +4,7 @@ One line per change, newest on top: `YYYY-MM-DD — what was done`.
 
 ---
 
+2026-10-25 — the guide's gateway section: a gateway that answers `initialize` itself drops a server's instructions, which nothing here depends on; without a network policy, prefer the token to `behind_gateway` (another server behind the gateway that fetches URLs could reach this one)
 2026-10-24 — 0.2.0 released: on PyPI and as the image `ghcr.io/alexeiveselov92/repo-reader-mcp:0.2.0` (public; amd64 and arm64, each tried by CI after the push) — `guidance.own` patterns, the container image and `/health`, and the fixes since 0.1.0
 2026-10-24 — the container image (`ghcr.io/alexeiveselov92/repo-reader-mcp`, amd64 and arm64, per release, never `latest`): read-only root, user 10001, git 2.47 and ssh, the configuration at `/config`, the mirrors on a `/data` volume; built and tried on both platforms by CI on every change, the published image tried again; `/health` for a readiness probe (`503` until the first sync, then `200` for good; the one path without the token; probes left out of the log); `list_repos` names a group no host has listed yet, with why; a clear refusal of a mounted repository of another owner; the guide's page on running it in a container and behind an MCP gateway; a fourth refuting review's 9 findings closed
 2026-10-24 — `guidance.own` takes patterns: some of a repository's own guidance files, and no other — for guidance written for another job (developers' process) than the one agents do through the server
