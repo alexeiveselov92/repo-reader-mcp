@@ -90,6 +90,105 @@ def test_a_ref_that_could_be_taken_for_an_option_is_refused(ref):
         check_ref(ref)
 
 
+@pytest.mark.parametrize(
+    "ref",
+    ["main^{/text}", ":/text", "main@{1}", "@{-1}", "@", "main:file", "a..b", "a*", "a?", "a[b]", "a\\b", "a^b", "x/"],
+)
+def test_git_s_wider_revision_syntax_is_refused_before_any_lookup(ref):
+    """Checked before git is asked anything — a second guard beside looking names up only among branches and tags."""
+    with pytest.raises(ReadError, match="is not a ref this server reads"):
+        check_ref(ref)
+
+
+@pytest.fixture
+def worked(shop, tmp_path) -> Path:
+    """A clone of the shop someone worked in: a stash, a note, a reflog, a fetched ref outside branches and tags."""
+    copy = tmp_path / "worked"
+    git(tmp_path, "clone", "-q", str(shop[0]), str(copy))
+    write(copy, "README.md", "work in progress, never committed\n")
+    git(copy, "stash", "-q")
+    git(copy, "notes", "add", "-m", "a note on the commit", "HEAD")
+    git(copy, "update-ref", "refs/pull/1/head", "HEAD~1")
+    return copy
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "main^{/discount}",  # searches messages: whether it matches would confirm a guess at a secret one holds
+        ":/discount",
+        "main^{commit}",
+        "main@{0}",  # a reflog
+        "@{-1}",
+        "@",
+        "main:README.md",  # a file's contents
+        "v0.1..main",
+        "ma*n",
+        "stash",  # refs no list shows
+        "notes/commits",
+        "pull/1/head",
+        "refs/stash",
+        "ORIG_HEAD",
+    ],
+)
+async def test_only_names_and_ids_are_refs(worked, ref):
+    """A ref is a branch, a tag, a remote-tracking branch or a commit id, then `~N` / `^N` steps — nothing else of
+    git's revision syntax: not a search of messages, a reflog, a file, a range, nor a ref no list shows."""
+    cfg = config_for(worked)
+    for tool, arguments in [
+        ("read_file", {"path": "README.md", "ref": ref}),
+        ("log", {"ref": ref}),
+        ("show_commit", {"commit": ref}),
+        ("list_refs", {"contains": ref}),
+    ]:
+        text, error = await ask(cfg, tool, repo="shop", **arguments)
+        assert error, (tool, ref, text)
+        assert "work in progress" not in text and "a note on the commit" not in text
+
+
+async def test_a_guess_through_a_ref_tells_nothing(worked):
+    right, _ = await ask(config_for(worked), "read_file", repo="shop", path="README.md", ref="main^{/discount}")
+    wrong, _ = await ask(config_for(worked), "read_file", repo="shop", path="README.md", ref="main^{/zzzzzzzz}")
+    assert right.replace("discount", "X") == wrong.replace("zzzzzzzz", "X")
+
+
+async def test_names_ids_and_steps_are_read(worked, shop):
+    ids = shop[1]
+    cfg = config_for(worked)
+    for ref, commit in [
+        ("main", ids["catalog"]),
+        ("main~1", ids["merge"]),
+        ("main~1^2", ids["discounts"]),
+        ("main^^", ids["fix"]),
+        ("refs/heads/main", ids["catalog"]),
+        ("origin/main", ids["catalog"]),
+        ("origin/feature/discounts", ids["discounts"]),
+        ("v0.1", ids["pricing"]),
+        ("refs/tags/v0.2~2", ids["settings"]),
+        ("HEAD~2", ids["fix"]),
+        (ids["fix"], ids["fix"]),
+        (ids["fix"][:7], ids["fix"]),
+        (ids["merge"][:9] + "^2", ids["discounts"]),
+    ]:
+        text, error = await ask(cfg, "show_commit", repo="shop", commit=ref, files_only=True)
+        assert not error and f"commit {commit[:12]}" in text, (ref, text)
+
+
+async def test_a_repository_s_replace_refs_change_nothing_read(shop, tmp_path):
+    """git would show a replacement's contents under a commit's id — anyone who can push a ref could rewrite what a
+    commit says. The server reads objects as they are."""
+    copy = tmp_path / "replaced"
+    git(tmp_path, "clone", "-q", str(shop[0]), str(copy))
+    fake = git(
+        copy, "commit-tree", f"{shop[1]['fix']}^{{tree}}", "-p", f"{shop[1]['fix']}^", "-m", "A REPLACED MESSAGE"
+    )
+    git(copy, "replace", shop[1]["fix"], fake)
+    text, error = await ask(config_for(copy), "show_commit", repo="shop", commit=shop[1]["fix"])
+    assert not error and "Fix the cart total" in text and "REPLACED" not in text
+    text, _ = await ask(config_for(copy), "search_commits", message="replaced|fix the cart")
+    assert "Fix the cart total" in text and "REPLACED" not in text
+
+
 async def test_only_a_resolved_commit_id_reaches_git(shop, tmp_path, monkeypatch):
     """A branch can be named like an option (anyone who can push can name one `--output=…`, and `git diff` given that
     writes a file). Even with the check above taken away, such a name is resolved to its commit id first, and only
@@ -108,6 +207,7 @@ async def test_only_a_resolved_commit_id_reaches_git(shop, tmp_path, monkeypatch
         ("show_commit", {"commit": f"--output={written}"}),
         ("read_file", {"path": "README.md", "ref": f"--output={written}"}),
         ("list_files", {"ref": f"--output={written}"}),
+        ("list_refs", {"contains": f"--output={written}"}),
     ]:
         text, error = await ask(cfg, tool, repo="shop", **arguments)
         assert not error, (tool, text)  # read at the commit the branch points at
@@ -254,6 +354,11 @@ async def test_the_history_leaves_out_commits_that_changed_only_what_is_not_serv
     assert "Add discounts" in held  # it changed a served file too
     paged, _ = await ask(config_for(copy, exclude=["secrets"]), "log", repo="shop", max_count=1, skip=1)
     assert "Add the catalog" in paged and "call log with skip=2" in paged  # `skip` counts what the agent sees
+    asked = {"message": "rotate|release|discounts"}
+    everything, _ = await ask(config_for(copy), "search_commits", **asked)
+    assert "Rotate secrets/prod.env" in everything
+    held, _ = await ask(config_for(copy, exclude=["secrets"]), "search_commits", **asked)
+    assert "Rotate secrets" not in held and "Release notes only" in held and "Add discounts" in held
 
 
 async def test_include_takes_only_what_it_names(shop):

@@ -7,6 +7,8 @@ from conftest import ask
 from remotes import blobs_in, contents_by_path, make_remote
 from repos import ALAN, commit, git, write
 
+from repo_reader_mcp import git as git_module
+from repo_reader_mcp import tools
 from repo_reader_mcp.config import parse_config
 from repo_reader_mcp.secrets import hide
 
@@ -109,9 +111,12 @@ async def test_a_guessed_secret_can_t_be_confirmed_by_searching_messages(leaky, 
     for config in (served(leaky, tmp_path), served(leaky, tmp_path, exclude=["nothing-here"])):
         text, _ = await ask(config, "log", repo="leaky", message=GITHUB_TOKEN[:12])  # held back or not: both ways
         assert "Add the config" not in text, text
+        text, _ = await ask(config, "search_commits", message=GITHUB_TOKEN[:12])
+        assert "no commit matches" in text, text
     config = served(leaky, tmp_path)
-    text, _ = await ask(config, "log", repo="leaky", message="config|rotate")  # an extended regex
-    assert "Rotate the password" in text and "Add the config" not in text  # its message holds a secret
+    for tool, extra in (("log", {"repo": "leaky"}), ("search_commits", {})):
+        text, _ = await ask(config, tool, message="config|rotate", **extra)  # an extended regex
+        assert "Rotate the password" in text and "Add the config" not in text, tool  # its message holds a secret
 
 
 async def test_files_named_for_credentials_are_never_served(leaky, tmp_path):
@@ -220,6 +225,61 @@ async def test_log_by_message_can_t_confirm_a_guess(oracle):
         assert await answers(oracle, "log", repo="oracle", message=right) == await answers(
             oracle, "log", repo="oracle", message=wrong
         )
+        assert await answers(oracle, "search_commits", message=right) == await answers(
+            oracle, "search_commits", message=wrong
+        )
+
+
+async def test_a_guess_never_shifts_what_a_history_by_message_shows(tmp_path, monkeypatch):
+    """A commit whose message holds a secret is left out before the answer is cut, never after: a guess that matches
+    it shows the same commits — and says the same about more to follow — as a guess that doesn't."""
+    repo = tmp_path / "notes"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    for day, message in enumerate(["note 1", "note 2", f"Add the key (token {GITHUB_TOKEN})", "note 3"], start=1):
+        write(repo, "notes.txt", message + "\n")
+        commit(repo, message, ALAN, f"2026-03-0{day}T10:00:00+00:00")
+    config = parse_config({"repositories": [{"name": "notes", "path": str(repo)}]}, tmp_path)
+    right, wrong = "note|ghp_Ab12", "note|ghp_Zz99"
+    for skip in (0, 1):
+        assert await answers(config, "log", repo="notes", message=right, max_count=2, skip=skip) == await answers(
+            config, "log", repo="notes", message=wrong, max_count=2, skip=skip
+        ), skip
+    monkeypatch.setattr(tools, "COMMITS_PER_REPO", 2)
+    assert await answers(config, "search_commits", message=right) == await answers(
+        config, "search_commits", message=wrong
+    )
+
+
+@pytest.fixture
+def tricky(tmp_path):
+    """Messages written to slip past the check of what a message holds: a separator before the secret, another
+    commit's id between separators (anyone who can push can write one), a message longer than is read at once."""
+    repo = tmp_path / "tricky"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    write(repo, "a.txt", "1\n")
+    secret = commit(repo, f"Rotate things\n\nsee \x01 token {GITHUB_TOKEN}", ALAN, "2026-03-01T10:00:00+00:00")
+    write(repo, "a.txt", "2\n")
+    commit(repo, f"zz-unlock \x01{secret}\x01 \x1e{secret}\x1f", ALAN, "2026-03-02T10:00:00+00:00")
+    write(repo, "a.txt", "3\n")
+    commit(repo, "long " + "words " * 400 + f"\n\ntoken {GITHUB_TOKEN}", ALAN, "2026-03-03T10:00:00+00:00")
+    return parse_config({"repositories": [{"name": "tricky", "path": str(repo)}]}, tmp_path)
+
+
+async def test_a_message_can_t_slip_past_the_check_of_what_it_holds(tricky, monkeypatch):
+    monkeypatch.setattr(git_module, "OUTPUT_BYTES", 1500)  # the long message is longer than is read at once
+    for right, wrong in (
+        ("ghp_Ab12", "ghp_Zz99"),
+        ("zz-unlock|ghp_Ab12", "zz-unlock|ghp_Zz99"),
+        ("long|ghp_Ab", "long|ghp_Zz"),
+    ):
+        for tool, extra in (("log", {"repo": "tricky"}), ("search_commits", {})):
+            assert await answers(tricky, tool, message=right, **extra) == await answers(
+                tricky, tool, message=wrong, **extra
+            ), (tool, right)
+    text, _ = await ask(tricky, "search_commits", message="zz-unlock|rotate")
+    assert "zz-unlock" in text and "Rotate things" not in text
 
 
 async def test_keys_on_one_line_in_diffs_and_in_urls_are_hidden(oracle):

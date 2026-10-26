@@ -11,14 +11,16 @@ from __future__ import annotations
 
 import re
 import threading
+import time
 from collections import OrderedDict
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from functools import cached_property
 
 from .config import RepositoryConfig
 from .git import OID as HEX
-from .git import GitError, Output, run
+from .git import GitError, Output, run, stream
 from .mirror import Mirror, SyncError
 from .secrets import MARK, hide, outside
 from .secrets import spans as secret_spans
@@ -37,6 +39,15 @@ EMPTY_TREE = {
 }
 SEP = "\x1f"
 END = "\x1e"
+# A history whose commits an agent may not all see is read as far as it is judged, a batch at a time, the batches
+# growing — never cut before: what is left out would shift what is shown. The whole call is stopped after a minute.
+KEEP_BATCH = 200
+KEEP_BATCH_MOST = 6400
+JUDGE_SECONDS = 60
+TOO_LONG = "the history takes longer than {} seconds to read — narrow with `since`, `until`, `path` or the pattern"
+# `%x00` between fields, `-z` between records: git refuses NUL in a message, a name or a path, so no field can pass for
+# a boundary — a subject holding git's own separators can't forge a line.
+DETAILS = "%H%x00%cs%x00%an%x00%s"
 
 
 class ReadError(Exception):
@@ -53,14 +64,30 @@ def records(out: Output, separator: str) -> list[str]:
     return parts[:-1] if out.cut else parts
 
 
+STEPS = re.compile(r"(?:[~^][0-9]*)*$")  # `~3`, `^`, `^2` after a name or an id: back along the history
+ABBREVIATED = re.compile(r"[0-9a-f]{4,64}")  # a commit id, whole or its start
+# Never in a name an agent gives: the rest of git's revision syntax. `^{/text}` and `:/text` search commit messages
+# (whether one matches would confirm a guess at a secret one holds), `@{…}` reads a reflog, `:` names a file's contents,
+# `..` a range; the rest are globs and escapes.
+NOT_IN_A_NAME = ("@{", "{", "}", ":", "\\", "*", "?", "[", "..", "^", "~")
+NAMESPACES = ("refs/tags/", "refs/heads/", "refs/remotes/")  # where a name is looked up, in git's own order
+NAMESPACES_LISTED = ("refs/heads", "refs/tags", "refs/remotes")
+
+
 def check_ref(ref: str) -> str:
-    """A ref as an agent wrote it, refused when it could be taken for anything but a ref."""
+    """A ref as an agent wrote it — a branch, a tag, a remote-tracking branch or a commit id, then `~N` / `^N` steps —
+    refused when it could be taken for anything else."""
     if not ref or len(ref) > 256:
         raise ReadError("a ref is a branch, a tag or a commit id, up to 256 characters")
     if ref.startswith("-"):
         raise ReadError(f"`{ref}` is not a ref: a ref can't start with `-`")
     if any(ord(ch) <= 32 or ord(ch) == 127 for ch in ref):
         raise ReadError("a ref can't contain spaces or control characters")
+    base = ref[: STEPS.search(ref).start()]
+    if not base or base == "@" or base.endswith(("/", ".")) or any(part in base for part in NOT_IN_A_NAME):
+        raise ReadError(
+            f"`{ref}` is not a ref this server reads: a branch, a tag or a commit id, then `~N` or `^N` steps if any"
+        )
     return ref
 
 
@@ -119,7 +146,17 @@ class LogEntry:
     date: str
     author: str
     subject: str
-    paths: tuple[str, ...] = ()  # the files it changed (against its first parent), when asked for
+
+
+@dataclass(frozen=True)
+class Landing:
+    """How a commit reached a branch: the commit on the line of the branch's own commits (each one's first parent)
+    that brought it — the commit itself, made on that line (a squash, a rebase, a push), or the merge of the line it
+    was made on — and that one's date. `via` is None when the branch's history since the commit is longer than is
+    read."""
+
+    via: str | None
+    date: str
 
 
 @dataclass(frozen=True)
@@ -215,15 +252,18 @@ class Repository:
             label = self.default_branch() or "HEAD"
             target = "HEAD"
         else:
-            label = target = check_ref(ref)
-        try:
-            found = self.git(
-                "rev-parse", "--verify", "--quiet", "--end-of-options", f"{target}^{{commit}}", ok_codes=(0, 1)
-            ).text.strip()
-        except MissingContents:
-            # The id of something the copy lacks — a file's contents. Answered as any unknown name is: otherwise the
-            # answer would tell an agent that contents it guessed (a file's id is its contents' digest) are there.
-            found = ""
+            label = check_ref(ref)
+            target = self._revision(label)
+        found = ""
+        if target is not None:
+            try:
+                found = self.git(
+                    "rev-parse", "--verify", "--quiet", "--end-of-options", f"{target}^{{commit}}", ok_codes=(0, 1)
+                ).text.strip()
+            except MissingContents:
+                # The id of something the copy lacks — a file's contents. Answered as any unknown name is: otherwise the
+                # answer would tell an agent that contents it guessed (a file's id is its contents' digest) are there.
+                found = ""
         if not HEX.fullmatch(found):
             if ref is None:
                 raise ReadError(f"{self.name} has no commits yet")
@@ -234,8 +274,52 @@ class Repository:
         date = self.git("log", "-1", "--format=%cs", found, "--").text.strip()
         return At(label, found, date)
 
-    def refs(self) -> tuple[list[Ref], bool]:
-        """Branches, remote-tracking branches and tags, newest first; and whether there were more than were read."""
+    def _revision(self, ref: str) -> str | None:
+        """What git is given for a ref an agent wrote (checked): a branch, tag or remote-tracking branch by its full
+        name, or the one commit or tag an id names — then its steps; None when it names nothing, or two things. A name
+        is looked up among the refs list_refs shows — never `stash`, notes, a reflog. An id is taken whole as an id (a
+        branch named like one never takes its place), among commits and tags only — never a file's contents — and only
+        when a branch, a tag or HEAD has its commit: a stash, a commit amended away, are never read by their id."""
+        start = STEPS.search(ref).start()
+        base, steps = ref[:start], ref[start:]
+        if base == "HEAD":
+            return "HEAD" + steps
+        named = None
+        if not HEX.fullmatch(base):
+            names = [base] if base.startswith(NAMESPACES) else [space + base for space in NAMESPACES]
+            found = set(records(self.git("for-each-ref", "--format=%(refname)", *names), "\n"))
+            named = next((name for name in names if name in found), None)
+        object_id = self._object(base) if ABBREVIATED.fullmatch(base) else None
+        if named and object_id:
+            return None  # the start of an id and a name at once: which one is meant can't be told
+        if named:
+            return named + steps
+        return object_id + steps if object_id else None
+
+    def _object(self, start: str) -> str | None:
+        """The one commit or tag whose id is or starts with `start`, when a branch, a tag or HEAD has its commit."""
+        ids = self.git("rev-parse", f"--disambiguate={start}", ok_codes=(0, 1, 128)).text.split()
+        if not ids:
+            return None
+        listed = self.git("cat-file", "--batch-check=%(objectname) %(objecttype)", input=_lines_of(ids))
+        kinds = dict(line.split(" ", 1) for line in records(listed, "\n") if line.count(" ") == 1)
+        named = [oid for oid in ids if kinds.get(oid) in ("commit", "tag")]
+        if len(named) != 1:
+            return None
+        commit = self.git("rev-parse", "--verify", "--quiet", f"{named[0]}^{{commit}}", ok_codes=(0, 1)).text.strip()
+        return named[0] if HEX.fullmatch(commit) and self._reachable(commit) else None
+
+    def _reachable(self, commit: str) -> bool:
+        """Whether a branch, a tag, a remote-tracking branch or HEAD has a commit."""
+        out = self.git("for-each-ref", "--count=1", f"--contains={commit}", "--format=%(refname)", *NAMESPACES_LISTED)
+        if out.text.strip():
+            return True
+        head = self.git("rev-parse", "--verify", "--quiet", "HEAD^{commit}", ok_codes=(0, 1)).text.strip()
+        return bool(HEX.fullmatch(head)) and self.merge_base(commit, head) == commit
+
+    def refs(self, contains: str | None = None) -> tuple[list[Ref], bool]:
+        """Branches, remote-tracking branches and tags, newest first — only those that contain a commit (its id), when
+        given; and whether there were more than were read."""
         fields = [
             "%(refname)",
             "%(objecttype)",
@@ -250,13 +334,14 @@ class Repository:
             "for-each-ref",
             "--sort=-creatordate",
             "--format=" + "%1f".join(fields),
+            *([f"--contains={contains}"] if contains else []),
             "refs/heads",
             "refs/remotes",
             "refs/tags",
         )
         refs = []
         for line in records(out, "\n"):
-            parts = line.split(SEP)
+            parts = line.split(SEP, len(fields) - 1)  # the subject last: whatever it holds, it stays the subject
             if len(parts) != len(fields):
                 continue
             refname, kind, oid, peeled_kind, peeled, date, symref, subject = parts
@@ -273,6 +358,31 @@ class Repository:
     def merge_base(self, a: str, b: str) -> str | None:
         found = self.git("merge-base", a, b, ok_codes=(0, 1)).text.strip()
         return found if HEX.fullmatch(found) else None
+
+    def landing(self, commit: str, head: str) -> Landing | None:
+        """How a commit (an id) reached a branch's tip (an id), or None when the branch doesn't contain it. Walks the
+        branch's own line back from its tip while each commit on it descends from the one asked about: the first that
+        doesn't is just before the commit that brought it."""
+        if self.merge_base(commit, head) != commit:
+            return None
+        after = self.git("log", "--ancestry-path", "--format=%H", f"{commit}..{head}", "--")
+        if after.cut:
+            return Landing(None, "")
+        descendants = {line for line in records(after, "\n") if line}
+        line = self.git(
+            "log", "--first-parent", f"--max-count={len(descendants) + 1}", f"--format=%H{SEP}%cs", head, "--"
+        )
+        if line.cut:
+            return Landing(None, "")
+        brought = Landing(None, "")
+        for record in records(line, "\n"):
+            oid, _, date = record.partition(SEP)
+            if oid == commit:
+                return Landing(commit, date)
+            if oid not in descendants:
+                break
+            brought = Landing(oid, date)
+        return brought
 
     # --- trees and files ----------------------------------------------------------------------------------------
 
@@ -422,35 +532,18 @@ class Repository:
 
     # --- history ------------------------------------------------------------------------------------------------
 
-    def log(
+    def _walk(
         self,
-        at: At,
-        *,
-        path: str | None = None,
-        author: str | None = None,
-        since: str | None = None,
-        until: str | None = None,
-        message: str | None = None,
-        count: int | None = 30,
-        skip: int = 0,
-        with_paths: bool = False,
-    ) -> tuple[list[LogEntry], bool]:
-        """Commits newest first (all of them when `count` is None); and whether there were more than were read.
-
-        `with_paths` adds the files each commit changed — against its first parent, renames as a deletion and an
-        addition.
-        """
-        args = ["log", f"--skip={skip}", *([f"--max-count={count}"] if count is not None else [])]
-        if with_paths:
-            args += [
-                f"--format={END}%H{SEP}%cs{SEP}%an{SEP}%s",
-                "--name-only",
-                "-z",
-                "--no-renames",
-                "--diff-merges=first-parent",
-            ]
-        else:
-            args.append(f"--format=%H{SEP}%cs{SEP}%an{SEP}%s{END}")
+        at: At | None,
+        path: str | None,
+        author: str | None,
+        since: str | None,
+        until: str | None,
+        message: str | None,
+    ) -> list[str]:
+        """The arguments that choose a history's commits: of `at`, or — when it is None — of every branch, tag and
+        remote-tracking branch, and of HEAD; then the filters and the path."""
+        args = []
         if author:
             args.append(f"--author={author}")
         if since:
@@ -461,31 +554,151 @@ class Repository:
             args += [f"--grep={message}", "--extended-regexp"]
         if author or message:
             args.append("--regexp-ignore-case")
-        args += [at.commit, "--", *([path] if path else [])]
-        out = self.git(*args)
-        entries = []
-        for record in records(out, END):
-            head, _, names = record.partition("\0") if with_paths else (record, "", "")
-            parts = head.strip("\n").split(SEP)
-            if len(parts) == 4:
-                paths = tuple(name for name in names.lstrip("\n").split("\0") if name)
-                entries.append(LogEntry(*parts, paths=paths))
-        return entries, out.cut
+        starts = [at.commit] if at is not None else ["--branches", "--tags", "--remotes", "HEAD"]
+        return [*args, *starts, "--", *([path] if path else [])]
 
-    def still_say(self, entries: list[LogEntry]) -> list[LogEntry]:
-        """Of the commits git found by a message pattern, those whose message holds no value that looks like a secret:
-        git may have matched inside one, and its pattern is never matched again here — so a guessed secret can't be
-        confirmed by searching messages for it. (A commit whose message holds a secret isn't found by its message.)"""
-        if not entries:
-            return entries
-        ids = "".join(e.commit + "\n" for e in entries).encode()
-        out = self.git("log", "--no-walk=unsorted", "--stdin", "--format=%H%x00%B%x01", input=ids)
-        clean = set()
-        for record in out.text.split("\x01"):
-            commit, _, body = record.strip("\n").partition("\x00")
-            if commit and not any(secret_spans(line) for line in body.split("\n")):
-                clean.add(commit)
-        return [e for e in entries if e.commit in clean]
+    def _log(self, args: list[str], message: str | None, author: str | None, limit: int | None = None) -> Output:
+        try:
+            return self.git("log", *args, limit=limit)
+        except ReadError as error:
+            if message and not author and "command line" in str(error):  # how git refuses a pattern it can't read
+                raise ReadError(f"`{message}` is not a regular expression git reads: {error}") from None
+            raise
+
+    def log(
+        self,
+        at: At,
+        *,
+        path: str | None = None,
+        author: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        count: int = 30,
+        skip: int = 0,
+    ) -> tuple[list[LogEntry], bool]:
+        """`count` commits of a history after `skip`, newest first, as git walks it; and whether there were more than
+        were read. For a history an agent sees whole: one found by message, or of a repository served in part, is
+        `matching`, then `visible`, then `details`."""
+        walk = self._walk(at, path, author, since, until, None)
+        out = self._log(["-z", f"--format={DETAILS}", f"--skip={skip}", f"--max-count={count}", *walk], None, author)
+        return _details(out), out.cut
+
+    def matching(
+        self,
+        at: At | None,
+        *,
+        path: str | None = None,
+        author: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        message: str | None = None,
+    ) -> Iterator[str]:
+        """The ids of the commits of a history that match, newest first, as git finds them — read only as far as
+        `visible` judges them: never cut by a limit of bytes, which would let what is left out shift what is shown."""
+        if self.mirror is not None and not self.mirror.ready:
+            raise ReadError(f"{self.name} can't be read yet. {self.mirror.describe()}")
+        args = ["log", "--format=%H", *self._walk(at, path, author, since, until, message)]
+        try:
+            for line in stream(self.config.git_dir, args, timeout=JUDGE_SECONDS):
+                commit = line.decode("ascii", errors="replace").strip()
+                if HEX.fullmatch(commit):
+                    yield commit
+        except GitError as error:
+            if "took longer than" in str(error):  # the whole call's deadline, met while git still walked
+                raise ReadError(TOO_LONG.format(JUDGE_SECONDS)) from None
+            if message and not author and "command line" in str(error):  # how git refuses a pattern it can't read
+                raise ReadError(
+                    f"`{message}` is not a regular expression git reads: git could not read it: {error}"
+                ) from None
+            raise ReadError(f"git could not read it: {error}") from None
+
+    def visible(self, ids: Iterable[str], *, need: int, by_message: bool, held_back: bool) -> tuple[list[str], bool]:
+        """The first `need` of these commits an agent may see, in their order, and whether one more follows. Left out:
+        a commit found by its message whose message holds a value that looks like a secret — git may have matched
+        inside the value; and, where the repository is served in part, one that changed only paths it doesn't serve.
+        Judged a batch at a time, the batches growing, only as far as needed: the commits read depend on those kept,
+        never on those left out."""
+        kept: list[str] = []
+        batch: list[str] = []
+        size = KEEP_BATCH
+        deadline = time.monotonic() + JUDGE_SECONDS
+        found = iter(ids)
+        try:
+            while True:
+                commit = next(found, None)
+                if commit is not None:
+                    batch.append(commit)
+                    if len(batch) < size:
+                        continue
+                if batch:
+                    batch = self.clean(batch) if by_message else batch
+                    kept += self.serving(batch) if held_back else batch
+                    batch, size = [], min(size * 2, KEEP_BATCH_MOST)
+                if len(kept) > need:
+                    return kept[:need], True
+                if commit is None:
+                    return kept, False
+                if time.monotonic() > deadline:
+                    raise ReadError(TOO_LONG.format(JUDGE_SECONDS))
+        finally:
+            close = getattr(found, "close", None)
+            if close is not None:
+                close()
+
+    def details(self, ids: list[str]) -> list[LogEntry]:
+        """Each of these commits' id, date, author and subject, in the order given."""
+        if not ids:
+            return []
+        out = self.git("log", "--no-walk=unsorted", "--stdin", "-z", f"--format={DETAILS}", input=_lines_of(ids))
+        found = {entry.commit: entry for entry in _details(out)}
+        return [found[commit] for commit in ids if commit in found]
+
+    def clean(self, ids: list[str]) -> list[str]:
+        """Of these commits, those whose message holds no value that looks like a secret, in order: git may have
+        matched an agent's pattern inside one, and the pattern is never matched again here — so a commit whose message
+        holds a secret is never found by its message. Each message is read whole; one longer than git's output the
+        server reads at once counts as holding one."""
+        judged: set[str] = set()
+        pending = list(dict.fromkeys(ids))
+        while pending:
+            out = self.git("log", "--no-walk=unsorted", "--stdin", "-z", "--format=%H%x00%B", input=_lines_of(pending))
+            fields = _fields(out)
+            done = 0
+            for commit, body in zip(fields[0::2], fields[1::2], strict=False):
+                if done == len(pending) or commit != pending[done]:  # git answers in the order asked, or not trusted
+                    break
+                if not any(secret_spans(line) for line in body.split("\n")):
+                    judged.add(commit)
+                done += 1
+            pending = pending[max(done, 1) :]  # nothing judged: the first message alone is longer than is read
+        return [commit for commit in ids if commit in judged]
+
+    def serving(self, ids: list[str]) -> list[str]:
+        """Of these commits, those that changed something served — or nothing at all — in order: the files each
+        changed against its first parent, renames as a deletion and an addition. A commit whose files are more than
+        is read at once is kept when those read include a served one."""
+        kept: set[str] = set()
+        pending = list(dict.fromkeys(ids))
+        while pending:
+            out = self.git(
+                *("log", "--no-walk=unsorted", "--stdin", "-z", "--name-only", "--no-renames"),
+                *("--diff-merges=first-parent", "--format=%x00%x00%H"),
+                input=_lines_of(pending),
+            )
+            changed = _changed(_fields(out))
+            done = 0
+            for n, (commit, paths) in enumerate(changed):
+                if done == len(pending) or commit != pending[done]:
+                    break
+                served = any(self.matcher.allows(p) for p in paths)
+                whole = not (out.cut and n == len(changed) - 1)  # the last of a cut output: its files may go on
+                if not whole and not served and done:
+                    break  # asked again, first
+                if served or (whole and not paths):
+                    kept.add(commit)
+                done += 1
+            pending = pending[max(done, 1) :]
+        return [commit for commit in ids if commit in kept]
 
     def commit(self, at: At) -> CommitInfo:
         out = self.git("log", "-1", f"--format=%H{SEP}%P{SEP}%an{SEP}%aI{SEP}%cn{SEP}%cI{SEP}%B", at.commit, "--").text
@@ -692,6 +905,45 @@ def _quoted(path: str) -> str:
     if not any(b < 0x20 or b >= 0x7F or b in (0x22, 0x5C) for b in raw):
         return path
     return '"' + "".join(ESCAPES.get(b) or (f"\\{b:03o}" if b < 0x20 or b >= 0x7F else chr(b)) for b in raw) + '"'
+
+
+def _lines_of(ids: list[str]) -> bytes:
+    return "".join(commit + "\n" for commit in ids).encode()
+
+
+def _fields(out: Output) -> list[str]:
+    """The fields of a `-z` output with `%x00` between fields: each one ends in NUL, so a field is whole when a NUL
+    follows it — the last of a cut output may not be, and is dropped."""
+    return out.text.split("\0")[:-1]
+
+
+def _details(out: Output) -> list[LogEntry]:
+    """`log -z --format=DETAILS` read back: four fields a commit."""
+    fields = _fields(out)
+    entries = []
+    for i in range(0, len(fields) - 3, 4):
+        commit, date, author, subject = fields[i : i + 4]
+        if not HEX.fullmatch(commit):
+            break
+        entries.append(LogEntry(commit, date, author, subject))
+    return entries
+
+
+def _changed(fields: list[str]) -> list[tuple[str, list[str]]]:
+    """`log -z --name-only --format=%x00%x00%H` read back: each commit and the files it changed. A commit starts after
+    two empty fields — which a path, never empty, can't make."""
+    found: list[tuple[str, list[str]]] = []
+    i = 0
+    while i < len(fields):
+        if i + 2 < len(fields) and fields[i] == fields[i + 1] == "" and HEX.fullmatch(fields[i + 2]):
+            found.append((fields[i + 2], []))
+            i += 3
+            continue
+        if found and fields[i]:
+            name = fields[i]
+            found[-1][1].append(name[1:] if not found[-1][1] and name.startswith("\n") else name)
+        i += 1
+    return found
 
 
 def _iso(value: str) -> str:

@@ -31,7 +31,9 @@ whole team.
 ## What it will do
 
 - **Read** a file, a folder, any branch, tag or commit — not only the default branch.
-- **History**: commits of a repository or a path, a commit with its diff, a diff between two refs, blame.
+- **History**: commits of a repository or a path, a commit with its diff, a diff between two refs, blame — and
+  commits found by their message across every repository (a ticket's key, a pull request's number), each saying
+  when it reached the default branch and which releases have it.
 - **Guidance for agents**: a repository's `AGENTS.md`, `CLAUDE.md`, rules and skills reach the agent reading it
   — plus what the people who run the server add, from its configuration or from another repository.
 - **Search** across all configured repositories at once, and `grep` inside one at any ref, with lines of context.

@@ -16,7 +16,7 @@ import re
 import subprocess
 import tempfile
 import threading
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 
 # The commands the server may run; each only reads.
@@ -68,6 +68,7 @@ SET_VARIABLES = {
     "PAGER": "cat",
     "GIT_OPTIONAL_LOCKS": "0",
     "GIT_LITERAL_PATHSPECS": "1",
+    "GIT_NO_REPLACE_OBJECTS": "1",  # a repository's replace refs would show other contents under a commit's id
     "LC_ALL": "C",
 }
 
@@ -185,6 +186,42 @@ def run(
     # GIT_NO_LAZY_FETCH (git 2.44 and later): a missing object is never fetched, whatever the configuration says.
     env = environment({"GIT_NO_LAZY_FETCH": "1"})
     return _execute(command(git_dir, args), git_dir, env, limit=limit, ok_codes=ok_codes, input=input)
+
+
+def stream(git_dir: str, args: Sequence[str], *, timeout: int = TIMEOUT_SECONDS) -> Iterator[bytes]:
+    """Run one reading git command and give its output a line at a time, for as long as the caller reads: closing the
+    iterator early stops git, and so does `timeout`. For an output read only as far as it is needed — with no limit of
+    bytes, which would cut it where the caller can't choose."""
+    env = environment({"GIT_NO_LAZY_FETCH": "1"})
+    with tempfile.TemporaryFile() as err:
+        proc = subprocess.Popen(
+            command(git_dir, args), cwd=git_dir, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err
+        )
+        timed_out = threading.Event()
+
+        def stop() -> None:
+            timed_out.set()
+            proc.kill()
+
+        timer = threading.Timer(timeout, stop)
+        timer.start()
+        try:
+            assert proc.stdout is not None
+            yield from proc.stdout
+            code = proc.wait()
+        finally:
+            timer.cancel()
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+            assert proc.stdout is not None
+            proc.stdout.close()
+        err.seek(0)
+        stderr = err.read().decode("utf-8", errors="replace").strip()
+    if timed_out.is_set():
+        raise GitError(f"git took longer than {timeout} seconds and was stopped", stderr)
+    if code != 0:
+        raise GitError(stderr.splitlines()[-1] if stderr else f"git exited with code {code}", stderr)
 
 
 def maintain(

@@ -73,6 +73,10 @@ with something visible: a real agent answering through the server.
       `publish` workflow releases a tag `v*` by trusted publishing.
 - [x] 0.2.0, 2026-10-24: on PyPI and as the image on GHCR (public) — `guidance.own` patterns, `/health`, the fixes
       since 0.1.0.
+- [x] 0.3.0, 2026-10-26 — from a ticket to the code, asked by a company applying it: `search_commits` (commits by
+      message across repositories, on every branch and tag, each with how it reached the default branch) and
+      `list_refs` with `contains` (the branches and tags — releases — holding a commit); a history by message pages
+      after leaving out commits whose message holds a secret.
 - [ ] Docs for agents and for people who run it, completed by what the first deployment teaches; the next versions.
 
 ## Later

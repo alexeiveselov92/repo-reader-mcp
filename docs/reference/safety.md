@@ -21,6 +21,16 @@ What repo-reader-mcp never does, and how. Each protection has a test that fails 
   is refused. Every command after that gets the commit id, never the agent's text. This matters because a branch *can*
   be named like an option — anyone who can push can create a branch called `--output=/some/file`, and `git diff` given
   that name writes a file. Here, that branch is just read at the commit it points at.
+- **A ref is a name or an id, nothing more of git's syntax.** A branch, a tag or a remote-tracking branch — looked up
+  among those `list_refs` shows, never a stash, a note, a reflog or a ref fetched elsewhere — or a commit's id (an
+  annotated tag's too, never a file's contents), then `~N` / `^N` steps. An id is read only when a branch, a tag or
+  HEAD has its commit: a stash's commits, a commit amended away or a branch deleted are still in a repository, and
+  never read by their id. A whole id is always an id — a branch named like one never takes its place — and the start of
+  one that is also a name is refused. The rest of git's revision syntax is refused:
+  `main^{/text}` and `:/text` search commit messages, so whether one resolved would confirm a guess at a secret a
+  message holds, a character at a time; `main@{1}` reads a reflog, `main:file` a file, `a..b` is a range.
+- **A repository's replace refs are ignored.** git would show a replacement's contents under a commit's id, which
+  anyone who can push a ref could set; the server reads every object as it is.
 - **A path is plain and literal.** `..`, `.` and empty parts are refused; paths reach git after `--`, read literally
   (no wildcard or pathspec magic), and are looked up inside the commit's tree — never on the disk.
 
@@ -138,8 +148,8 @@ it — instead `config` is listed and its diff not shown (found by the refuting 
 answer never tells whether it exists or changed. A commit that changed excluded files says how many it doesn't show —
 never which.
 
-A history (`log`) lists only commits that changed something served (or nothing at all): a commit that changed only
-excluded paths is left out. What it doesn't hide: **commit messages** are shown as their authors wrote them — a commit
+A history (`log`, `search_commits`) lists only commits that changed something served (or nothing at all): a commit
+that changed only excluded paths is left out. What it doesn't hide: **commit messages** are shown as their authors wrote them — a commit
 that changed a served file and an excluded one may name both in its message.
 
 ## Guidance can't be planted from a branch
@@ -185,7 +195,8 @@ Every answer, and every error, passes through a filter that replaces each value 
   matches a line holding one (the server doesn't match it again in another dialect, which could be tricked into
   matching the gap a hidden value leaves). The answer is then what git would have given had the dropped lines not
   matched: the limit of matches a file counted after them, the lines around the matches kept alone. A commit whose
-  message holds a hidden value isn't found by `log`'s `message` at all.
+  message holds a hidden value isn't found by its message at all — by `log`'s `message` or by `search_commits` — and
+  is left out before the answer is cut, so it never shifts what is shown or whether more is said to follow.
 - **The rules lean towards hiding**: a value hidden by mistake (a long base64 line, a test fixture shaped like a key)
   costs a look at the host; a value shown costs a rotation. What they can't see is not hidden: a secret with no
   recognisable shape, in no setting named for one — keep such files out with `exclude`.
@@ -197,4 +208,6 @@ Every answer, and every error, passes through a filter that replaces each value 
 `id_ecdsa`, `id_ed25519` (and `id_rsa_github`…, not `.pub`), `.netrc`, `.pgpass`, `.pypirc`, `.git-credentials` are
 treated as `exclude` takes them, in every repository: never listed, read, searched or diffed — and never
 fetched into a mirror. A repository whose such files are meant to be read says `serve_credential_files: true`; the
-secrets in them are still hidden.
+secrets in them are still hidden. One difference from `exclude`: a history is not narrowed for them alone — a commit
+that changed only such a file is still listed, with its message (never the file), since narrowing would mean reading
+the files every commit changed. To leave such commits out, name the files in `exclude`.

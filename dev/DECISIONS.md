@@ -326,3 +326,53 @@ segments, JSON-RPC posted to it, upgrades): none reached the MCP app. Its findin
 **Decision** (the author chose). A version goes to `main` first and waits for every workflow — the tests, the site,
 the image on both platforms; only then is the tag `v<version>` pushed, which publishes the package and the image. A tag
 pushed with untried changes could put a version on PyPI (a number never reusable) with no image beside it.
+
+## 2026-10-26 · From a ticket to the code: `search_commits` and `list_refs` with `contains`
+
+**Decision** (asked by a company applying it; generalised). A team writes ticket keys and pull request numbers in its
+commit messages; "when did this ticket's work land, and in which release" is a question about the history the server
+already reads. One new tool and one parameter, not two tools: `search_commits` (by message, across repositories, on
+every branch and tag and HEAD — unmerged work included) and `list_refs(contains=…)` (git's own `--contains`, beside
+`kind` and `pattern`). Each commit found says how it reached the default branch: on its first-parent line ("made on
+it" — a squash, a rebase, a push, a fast-forward: the commit's own date), by the merge that brought it (its date), or
+not at all. A ticket tracker (epics, sub-tasks) is another server's job: an agent joins the two. Deployments are not in
+git: where a team deploys its default branch, the date it landed is when it went out; where it releases by tags or
+branches, `contains` names them. Counts were dropped from the answer: an exact count would mean judging every match.
+
+## 2026-10-26 · The fifth refuting review's findings (commit search; all closed or said)
+
+A second agent tried to break the new paths with made-up repositories, and found three holes 0.2.0 already had:
+1. **`main^{/text}` and `:/text` as a ref** searched commit messages: whether the ref resolved told whether a message
+   matched — a 40-character token read out in 252 calls. Refs are now a name or an id with `~N` / `^N` steps: checked
+   against a grammar (`check_ref`), then looked up only among `refs/tags`, `refs/heads`, `refs/remotes` or among
+   commits and tags by id — two guards, each with its own test. The same closed reflogs (`main@{1}`), a stash, notes and
+   refs fetched elsewhere (`refs/pull/*`): a stash is work never committed.
+2. **The check of what a message holds could be slipped past**: its records were split by `\x01`, which a message can
+   hold (and another commit's id between two of them marked that commit clean); a message longer than git's output
+   read was judged by its start. Now NUL-delimited, in the order asked, and a message longer than is read counts as
+   holding a secret.
+3. **A history cut before it was judged** — by bytes of git's output or by the page asked for — let a commit left out
+   (a secret in its message, or only paths not served) shift what was shown and the "more" note: a guess told apart by
+   them at the real limits, with thousands of commits. Now the ids of every match are read first (refused whole past
+   64 MB, never cut), judged a batch at a time only as far as needed, and only then is anything cut.
+
+And in the new code, all closed: the landing line could be wrong on a long history (the first-parent read's cut was
+unchecked); it named a merge a history hides; a subject or a path holding git's separators (`\x1e`, `\x1f`) forged a
+line, hid a commit, or made a repository unsearchable — every history is now read NUL-delimited; HEAD was not walked;
+replace refs were honoured (`GIT_NO_REPLACE_OBJECTS=1`); `since` / `until` were not checked. Said, not changed: a fast
+forward and a "foxtrot" merge make git's first-parent line run through a branch, so a date there is the commit's own
+(the guide says so); a commit that changed only a file named for credentials is listed when nothing else is excluded
+(narrowing would read every commit's files — the guide says so, and `exclude` does it); a regular expression that
+backtracks badly costs up to 30 seconds of git per repository (as in `search`); a tag of a tag is not listed.
+
+The same agent then re-ran its cases against the fixes (all held) and broke the fixes themselves, four ways — closed:
+a branch named like a commit's id (whole, or the 12 characters the tools print) took the id's place, as names were
+looked up first — a whole id is now always an id, a start of one that is also a name refused; a commit dated far ahead
+(`%cs` of five digits) stopped the new parser and emptied every answer after it — the date is no longer checked, the
+NUL framing is; refusing a history matching more than 64 MB of ids was itself decided before the commits left out —
+an oracle at about 1.6 million commits — so the ids now stream, read only as far as the commits kept need, in batches
+growing to 6,400 (a long history no longer starts a git process per 200 commits), within a minute for the call; and an
+id named any object in the store — a stash's commits, a commit amended away — so an id is read only when a branch, a
+tag or HEAD has its commit. Said, not changed: in a repository served in part, "in `main`" without a date tells that a
+merge not shown brought the commit, not which.
+

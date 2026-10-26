@@ -153,10 +153,11 @@ repositories:
 | Tool | What |
 |---|---|
 | `list_repos` | the repositories, their default branch, the commit it is at, their branches and tags (milestone 1) |
-| `list_refs` | branches and tags of one repository (milestone 1) |
+| `list_refs` | branches and tags of one repository (milestone 1); with `contains`, those holding a commit, when it reached the default branch, the earliest tag that has it (0.3.0) |
 | `read_file` | a file at a ref, as numbered lines, a window at a time (milestone 1) |
 | `list_files` | a folder at a ref, or every file under it (milestone 1) |
 | `log` | commits of a ref or a path, newest first; by author, message, since, until (milestone 1) |
+| `search_commits` | commits across repositories by message, on every branch and tag, each with how it reached the default branch — made on its first-parent line, or the merge that brought it (`log --ancestry-path` against `log --first-parent`), or not in it (0.3.0) |
 | `show_commit` | one commit: message, author, files changed, its diff (capped) (milestone 1) |
 | `diff` | between two refs, or since their merge base, for a path or the whole tree (capped) (milestone 1) |
 | `blame` | who last changed each line of a file, at a ref, grouped by commit (milestone 1) |
@@ -211,8 +212,19 @@ The public account is `docs/reference/safety.md`; each protection has a test tha
   settings named for secrets (references and placeholders left), passwords in prose — each replaced by
   `[hidden: <what>]`, the count said. A private key's block is hidden whole where the file is whole (`read_file`,
   `blame`; `search` / `grep` find the blocks with a second `git grep` over the files they hit). A hit found only inside
-  a hidden value is dropped (search, grep, and log by message — `--extended-regexp`, re-read by Python), so a guessed
-  secret can't be confirmed.
+  a hidden value is dropped (search, grep, and log / search_commits by message — `--extended-regexp`, re-read by
+  Python), so a guessed secret can't be confirmed; a history by message — or of a repository served in part — streams
+  the ids of the matches (`Repository.matching`, `git.stream`: no limit of bytes) only as far as `visible` judges them,
+  in batches growing from 200 to 6,400 (`clean` reads each message whole, NUL-delimited, in the order asked; `serving`
+  reads each commit's files), within a minute for the whole call, then reads the details of those shown — so the
+  commits read depend on those kept, never on those left out, and a commit left out never shifts what is shown or the
+  "more" note (0.3.0; 0.2.0 paged first and cut first). Every history git prints is read with NUL between
+  fields: a subject or a path holding git's other separators can't forge a line.
+- **Refs** (0.3.0): a name looked up among `refs/tags`, `refs/heads`, `refs/remotes` (git's order) or an id among
+  commits and tags (`rev-parse --disambiguate`, then `cat-file --batch-check`) whose commit a branch, a tag or HEAD has
+  (`for-each-ref --contains`, `merge-base`), then `~N` / `^N` steps; a whole id is never looked up as a name, and a start
+  of one that is also a name is refused; `check_ref` refuses the rest of git's syntax before any lookup — `^{/…}` and
+  `:/…` were an oracle on commit messages, a character at a time. `GIT_NO_REPLACE_OBJECTS=1` on every call.
 - **Tokens** travel in git's environment only — never a command line, a remote URL, a mirror's files or its status;
   error messages are scrubbed of them (the token, `user:token`, its base64). With a token, no redirect is followed and
   the account's credential helpers are off.

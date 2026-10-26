@@ -35,6 +35,9 @@ SEARCH_LINE = 300  # a longer line in search is cut
 SEARCH_BYTES = 1024 * 1024  # git grep's output read per repository in search
 SEARCH_WORKERS = 8  # repositories searched at once
 GREP_PER_FILE = 100  # matches a file shows in grep
+COMMITS_PER_REPO = 10  # commits a repository shows in search_commits, each with how it reached the default branch
+LANDING_LINE = 100  # what a line saying how a commit reached the default branch is reckoned at, before it is worked out
+DATE_CHARACTERS = 64
 
 # What is left of the answer limit for a tool's own answer, once guidance due with it took its share (at most half).
 BUDGET: ContextVar[int | None] = ContextVar("budget", default=None)
@@ -146,6 +149,41 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
         if name in repositories:
             return repositories[name]
         raise ToolError(f"no repository named `{name}` — known: {known(repositories)}")
+
+    def repos_named(names: list[str] | None) -> list[Repository]:
+        """The repositories a call across them reads: those named, or — without names — every one agents may name."""
+        every = catalog.listed()
+        if not names:
+            return list(every.values())
+        unknown = [name for name in names if name not in every]
+        if unknown:
+            listed = ", ".join(f"`{n}`" for n in unknown)
+            raise ToolError(f"no repository named {listed} — known: {known(every)}")
+        return [every[name] for name in dict.fromkeys(names)]
+
+    def reached(r: Repository, commit: str, head: At) -> str:
+        """Whether the default branch (`head`) has a commit — since when, and whether it was made on it or merged in."""
+        branch = f"`{head.label}`"
+        landing = r.landing(commit, head.commit)
+        if landing is None:
+            return f"not in {branch}"
+        if landing.via is None:
+            return f"in {branch} — since when, its history since is too long to tell"
+        if landing.via == commit:
+            return f"in {branch} since {landing.date} — made on it"
+        if r.matcher.configured and not r.serving([landing.via]):
+            return f"in {branch}"  # merged by a commit that changed only what isn't served: a history doesn't show it
+        return f"in {branch} since {landing.date} — merged in {landing.via[:12]}"
+
+    def date_of(value: str | None) -> str | None:
+        if value is not None and (
+            not value or len(value) > DATE_CHARACTERS or any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+        ):
+            raise ToolError(
+                f"a date is one line of up to {DATE_CHARACTERS} characters: `2026-01-31`, `2026-01-31T10:00:00`, "
+                "`2 weeks ago`"
+            )
+        return value
 
     def path_of(path: str, *, allow_root: bool = False) -> str:
         try:
@@ -286,19 +324,31 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
         pattern: Annotated[
             str | None, Field(description="Only names matching this glob, like `release/*` or `v1.*`.")
         ] = None,
+        contains: Annotated[
+            str | None,
+            Field(description="Only the branches and tags that contain this commit (its id, or any ref)."),
+        ] = None,
     ) -> str:
         """Branches and tags of a repository, newest first: the commit each points at, its date and subject. Any of
-        them — or any commit id — can be passed as `ref` to the reading tools."""
+        them — or any commit id — can be passed as `ref` to the reading tools. With `contains`, only those that have a
+        commit — which releases shipped it — and when it reached the default branch."""
         r = repo_named(repo)
         default = r.default_branch()
-        found, unread = r.refs()
+        target = r.resolve(contains) if contains else None
+        found, unread = r.refs(target.commit if target else None)
         refs = [ref for ref in found if not pattern or fnmatchcase(ref.name, pattern)]
         groups = {"branch": "Branches", "remote": "Remote-tracking branches", "tag": "Tags"}
         wanted = {"all": groups, "branches": ("branch", "remote"), "tags": ("tag",)}[kind]
         shown = [ref for ref in refs if ref.kind in wanted]
         answer = Answer(room())
         filters = f" matching `{pattern}`" if pattern else ""
+        filters += f" holding {target.describe()}" if target else ""
         answer.add(f"{r.name} — {_plural(len(shown), 'ref')}{filters}, newest first. `*` marks the default branch.")
+        if target:
+            answer.add(f"The default branch: {reached(r, target.commit, r.resolve(None))}.")
+            tags = [ref for ref in shown if ref.kind == "tag"]
+            if tags and not unread:  # newest first: the earliest is the last — unless the oldest were not read
+                answer.add(f"The earliest tag that has it: {tags[-1].name} ({tags[-1].date}).")
         width = min(max((len(ref.name) for ref in shown), default=0), 40)
         hidden = 0
         for group, title in groups.items():
@@ -448,20 +498,21 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
         r = repo_named(repo)
         at = r.resolve(ref)
         clean = scope(r, at, path)
-        asked = dict(path=clean, author=author, since=since, until=until, message=message)
+        asked = dict(path=clean, author=author, since=date_of(since), until=date_of(until))
         held_back = r.matcher.configured  # files named for credentials alone don't make a history walk every commit
-        if held_back:
+        if held_back or message:
             # Only commits that changed something served (or nothing at all): one that changed only paths outside
-            # include / exclude is not told — paged here, after that choice, so `skip` counts what the agent sees.
-            found, unread = r.log(at, **asked, count=None, with_paths=True)
-            found = r.still_say(found) if message else found
-            seen = [c for c in found if not c.paths or any(r.matcher.allows(p) for p in c.paths)]
-            commits = seen[skip : skip + max_count + 1]
+            # include / exclude is not told. Nor is one whose message holds a secret, which git may have matched
+            # inside. Every match is judged before anything is cut: `skip` counts what the agent sees, and a commit
+            # left out never shifts what is shown or whether more is said to follow — so a guess at a secret tells
+            # nothing.
+            ids = r.matching(at, **asked, message=message)
+            kept, more = r.visible(ids, need=skip + max_count, by_message=bool(message), held_back=held_back)
+            commits = r.details(kept[skip:])
         else:
             commits, unread = r.log(at, **asked, count=max_count + 1, skip=skip)
-            commits = r.still_say(commits) if message else commits
-        more = len(commits) > max_count or unread
-        commits = commits[:max_count]
+            more = len(commits) > max_count or unread
+            commits = commits[:max_count]
         filters = [f"of {clean}" if clean else ""]
         filters += [
             f"{key} `{value}`"
@@ -693,15 +744,7 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
         repository, file and line number (a few lines a file). Narrow with `repos` or `path`; search one repository
         at another ref, with lines around each match, with grep."""
         text = pattern_of(pattern)
-        every = catalog.listed()
-        if repos:
-            unknown = [name for name in repos if name not in every]
-            if unknown:
-                names = ", ".join(f"`{n}`" for n in unknown)
-                raise ToolError(f"no repository named {names} — known: {known(every)}")
-            chosen = [every[name] for name in dict.fromkeys(repos)]
-        else:
-            chosen = list(every.values())
+        chosen = repos_named(repos)
         if not chosen:
             return "No repositories are configured on this server.\n"
         clean = path_of(path, allow_root=True) if path else ""
@@ -762,6 +805,95 @@ def register(server: MCPServer, config: Config, catalog: Catalog) -> None:
         return answer.text(
             "cut: more matches than fit — narrow with `repos`, `path` or the pattern" if answer.full else None
         )
+
+    @tool
+    def search_commits(
+        message: Annotated[
+            str,
+            Field(
+                description="What the message holds: an extended regular expression, case aside — a ticket's key "
+                "(`ABC-123`; `ABC-123([^0-9]|$)` leaves ABC-1234 out), a pull request's number, a word."
+            ),
+        ],
+        repos: Annotated[
+            list[str] | None, Field(description="Only these repositories, by name. Default: every one.")
+        ] = None,
+        since: Annotated[str | None, Field(description="Only commits after: `2026-01-31`, `2 weeks ago`.")] = None,
+        until: Annotated[str | None, Field(description="Only commits before this date.")] = None,
+    ) -> str:
+        """Find commits across repositories by their message, on every branch and tag — the way from a ticket or a
+        pull request to the code that did it: each commit's id, date, author and subject, newest first, and whether the
+        default branch has it — since when, made on it or merged in. Read one with show_commit; list_refs with
+        `contains` names the branches and tags (releases) that have it."""
+        text = pattern_of(message)
+        since, until = date_of(since), date_of(until)
+        chosen = repos_named(repos)
+        if not chosen:
+            return "No repositories are configured on this server.\n"
+
+        def one(r: Repository):
+            try:
+                head = r.resolve(None)
+                ids = r.matching(None, message=text, since=since, until=until)
+                kept, more = r.visible(ids, need=COMMITS_PER_REPO, by_message=True, held_back=r.matcher.configured)
+                return r, head, r.details(kept), more, None
+            except ReadError as error:
+                return r, None, [], False, str(error)
+
+        with ThreadPoolExecutor(max_workers=SEARCH_WORKERS, thread_name_prefix="repo-reader-commits") as pool:
+            results = list(pool.map(one, chosen))
+        wrong = next((e for *_, e in results if e and e.startswith(f"`{text}` is not a regular expression")), None)
+        if wrong:
+            raise ToolError(wrong)
+        found = [result for result in results if result[2]]
+        dates = "".join(f" {key} `{value}`" for key, value in (("since", since), ("until", until)) if value)
+        many = _plural(len(chosen), "repository", "repositories")
+        head = f"`{text}`{dates} in commit messages of {many} (every branch and tag): "
+        if found:
+            head += f"found in {_plural(len(found), 'repository', 'repositories')}, newest first"
+            head += f" — at most {COMMITS_PER_REPO} a repository."
+        else:
+            head += "no commit matches."
+        errors = [f"({r.name} was not searched: {error})" for r, *_, error in results if error]
+
+        # How each commit reached its default branch is worked out only for those the answer has room for.
+        room_left = room() - len(head) - sum(len(e) + 1 for e in errors)
+        due = []
+        for r, at, entries, _, _ in found:
+            room_left -= len(r.name) + 140
+            for c in entries:
+                room_left -= len(c.author) + len(c.subject) + 40 + LANDING_LINE
+                if room_left < 0:
+                    break
+                due.append((r, c.commit, at))
+            if room_left < 0:
+                break
+        with ThreadPoolExecutor(max_workers=SEARCH_WORKERS, thread_name_prefix="repo-reader-landing") as pool:
+            reaches = dict(zip(((r.name, c) for r, c, _ in due), pool.map(lambda d: reached(*d), due), strict=True))
+
+        answer = Answer(room())
+        answer.add(head)
+        for line in errors:
+            answer.add(line)
+        for r, at, entries, more, _ in found:
+            answer.add()
+            title = f"## {r.name} · {at.describe()}"
+            if guide.of(r.name).docs:
+                title += f' — carries guidance for agents: read_guidance(repo="{r.name}")'
+            if not answer.add(title):
+                break
+            for c in entries:
+                reach = reaches.get((r.name, c.commit))
+                if reach is None or not answer.add(f"{c.commit[:12]}  {c.date}  {c.author}  {c.subject}"):
+                    answer.full = True
+                    break
+                if not answer.add(f"    {reach}"):
+                    break
+            if more and not answer.full:
+                answer.add(f"  (more in {r.name} — narrow with `since`, `until` or the message)")
+            if answer.full:
+                break
+        return answer.text("cut: more commits than fit — narrow with `repos` or the message" if answer.full else None)
 
     @tool
     def grep(

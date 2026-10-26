@@ -6,7 +6,11 @@ Every tool repo-reader-mcp offers to an agent. All are read-only: each says so t
 ## What every reading tool shares
 
 - **`repo`** — a repository's name, as `list_repos` shows it.
-- **`ref`** — any branch, tag or commit id: `main`, `release/2.1`, `v1.2.0`, `a1b2c3d`, `main~3`, `origin/main`.
+- **`ref`** — any branch, tag or commit id: `main`, `release/2.1`, `v1.2.0`, `a1b2c3d`, `main~3`, `origin/main`,
+  `refs/heads/main`, `HEAD^2` — a name or an id, then `~N` / `^N` steps. An id is read when a branch, a tag or HEAD
+  has its commit; the start of an id that is also a branch's name is refused as ambiguous. The rest of git's revision
+  syntax (`main^{/text}`, `:/text`, `main@{1}`, `main:file`, `a..b`) is refused, and so are refs no list shows (a
+  stash, notes) — [safety](safety.md#an-agents-input-cant-become-a-command).
   Without it, the repository's default branch (for a local repository: the branch its checkout is on; for a mirror:
   the host's). A mirror holds the branches and tags its configuration keeps, with their whole history.
 - **Paths** are written from the repository's root: `src/app.py`, `docs`. A leading or trailing `/` is ignored; `..`
@@ -67,6 +71,24 @@ commit the tag is on), the date and the subject. `*` marks the default branch.
 | `repo` | the repository |
 | `kind` | `all` (default), `branches` (with remote-tracking branches such as `origin/main`), or `tags` |
 | `pattern` | only names matching a glob: `release/*`, `v1.*` |
+| `contains` | only the branches and tags that contain this commit (its id, or any ref) |
+
+With `contains`, the answer also says whether the default branch has the commit — since when, and whether it was made
+on it or merged in (as [`search_commits`](#search_commits) does) — and names the earliest tag that has it: which release
+shipped it.
+
+```
+shop — 3 refs holding commit 09cf48c0a1f6 (2026-02-10), newest first. `*` marks the default branch.
+The default branch: in `main` since 2026-02-20 — merged in 512ed7a49e1d.
+The earliest tag that has it: v0.2 (2026-02-20).
+
+Branches:
+* main               14a4c0422ae3  2026-03-01  Add the catalog and assets; drop the legacy config
+  feature/discounts  09cf48c0a1f6  2026-02-10  Add discounts
+
+Tags:
+  v0.2               512ed7a49e1d  2026-02-20  Merge branch 'feature/discounts'
+```
 
 ## `read_file`
 
@@ -118,7 +140,56 @@ committed), author and subject.
 
 A file's history stops where the file was renamed: renames are not followed. When the repository is served only in
 part (`include` / `exclude`), the history lists only commits that changed something served — or nothing at all — and
-says so; `skip` counts the commits shown. Messages are shown as their authors wrote them.
+says so; `skip` counts the commits shown. Messages are shown as their authors wrote them. To find commits by their
+message in every repository at once, on every branch, use [`search_commits`](#search_commits).
+
+## `search_commits`
+
+Commits across repositories found by their message, on every branch and tag each repository holds (and its HEAD) —
+the way from a ticket or a pull request to the code that did it, and to when it landed. For each repository, up to 10
+commits, newest first: each one's id, date (when it was committed), author and subject, and under it whether the
+default branch has it:
+
+- **made on it** — the commit is on the default branch's own line (each commit's first parent): pushed there, or a
+  pull request squashed or rebased onto it by the host. Its date is the commit's own: for a squash or a rebase made by
+  the host, when it landed; for a branch fast-forwarded onto the default one, when it was committed — git doesn't
+  record a fast-forward;
+- **merged in** a commit — it was made on another branch, merged into the default branch by that merge, on the date
+  given;
+- **not in** the default branch — not merged (yet). `list_refs` with `contains` names the branches and tags that have
+  it.
+
+| Input | |
+|---|---|
+| `message` | What the message holds: an extended regular expression, letters' case aside. One line. A ticket's key matches its longer neighbours too (`ABC-12` in `ABC-123`): `ABC-12([^0-9]\|$)` leaves them out. |
+| `repos` | Only these repositories, by name. Default: every one `list_repos` shows. |
+| `since`, `until` | Only commits after / before a date: `2026-01-31T00:00:00`, `2 weeks ago`. |
+
+```
+`discount` in commit messages of 1 repository (every branch and tag): found in 1 repository, newest first — at most 10 a repository.
+
+## shop · main @ 14a4c0422ae3 (2026-03-01)
+512ed7a49e1d  2026-02-20  Ada Lovelace  Merge branch 'feature/discounts'
+    in `main` since 2026-02-20 — made on it
+09cf48c0a1f6  2026-02-10  Alan Turing  Add discounts
+    in `main` since 2026-02-20 — merged in 512ed7a49e1d
+```
+
+The whole message is searched, not only its subject: a commit whose body names the ticket is found though its subject
+doesn't (`show_commit` shows the message whole). Only what git holds is read: commits and their messages, never a
+host's pull requests or deployments. How much it finds depends on how a team writes its messages: a ticket's key in a
+squashed pull request's title lands on the default branch with it. When a team deploys every commit of its default branch, the date it landed is when it went
+out; when it releases by tags or release branches, `list_refs` with `contains` names the first release that has it.
+
+As in `log`: a repository served only in part shows only commits that changed something served (or nothing at all)
+— and doesn't name a merge that changed only what isn't served — and a commit whose message holds a value that looks
+like a secret is not found by its message ([safety](safety.md#secrets-found-in-files-are-hidden)). Every match is
+judged before anything is cut, so the answer says whether more follow, never how many. A repository whose history
+takes longer than a minute to judge is not searched, and the answer says so: narrow with `since`, `until` or the
+message. How each commit reached the default branch is worked out only for the commits the answer has room for.
+
+A branch that took the default one in (merged it) and was then fast-forwarded onto it puts its own line on the default
+branch's: commits made on the default branch before that read as merged in.
 
 ## `show_commit`
 
