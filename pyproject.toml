@@ -1,6 +1,6 @@
 [project]
 name = "repo-reader-mcp"
-version = "0.3.0"
+version = "0.3.1"
 description = "A read-only MCP server for code in git repositories — files, branches, history, diffs, blame and search — for any MCP client and any code host."
 readme = "README.md"
 license = "Apache-2.0"

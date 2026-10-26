@@ -8,7 +8,7 @@ ghcr.io/alexeiveselov92/repo-reader-mcp:<version>
 ```
 
 Every release from 0.2.0 on is published for `linux/amd64` and `linux/arm64`. Each is tagged twice, with its version
-(`0.2.0`) and with its commit (`sha-1a2b3c4`); there is no `latest`, so an upgrade is always a choice you make. The
+(`0.3.1`) and with its commit (`sha-1a2b3c4`); there is no `latest`, so an upgrade is always a choice you make. The
 image holds the package with its locked dependencies, git 2.47 (it must be 2.44 or later; see
 [Safety](reference/safety.md#reading-never-reaches-the-network)) and an ssh client. It runs as user `reader` (`10001`),
 without rights, and works on a read-only root filesystem.
@@ -19,7 +19,7 @@ without rights, and works on a read-only root filesystem.
 docker run --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
   -v "$PWD/config:/config:ro" -v repo-mirrors:/data \
   -e GITHUB_TOKEN -e REPO_READER_MCP_TOKEN \
-  -p 8000:8000 ghcr.io/alexeiveselov92/repo-reader-mcp:0.2.0
+  -p 8000:8000 ghcr.io/alexeiveselov92/repo-reader-mcp:0.3.1
 ```
 
 ```yaml
@@ -49,9 +49,9 @@ Arguments after the image replace the default command (`--http 0.0.0.0:8000`):
 
 ```bash
 docker run --rm -v "$PWD/config:/config:ro" -e GITHUB_TOKEN -e REPO_READER_MCP_TOKEN \
-  ghcr.io/alexeiveselov92/repo-reader-mcp:0.2.0 --check
+  ghcr.io/alexeiveselov92/repo-reader-mcp:0.3.1 --check
 docker run --rm -v "$PWD/config:/config:ro" -v repo-mirrors:/data -e GITHUB_TOKEN -e REPO_READER_MCP_TOKEN \
-  ghcr.io/alexeiveselov92/repo-reader-mcp:0.2.0 --sync
+  ghcr.io/alexeiveselov92/repo-reader-mcp:0.3.1 --sync
 ```
 
 Every variable the configuration names must be set for these too, the bearer token's included: the configuration is
@@ -82,7 +82,7 @@ server behind one:
 
 - **Point the gateway at `/mcp`**, for example `http://repo-reader:8000/mcp` inside the cluster. Answers are plain
   JSON, request ids may be strings or numbers, and no session is kept, so whatever the gateway does with sessions
-  works.
+  works. A GET of `/mcp` with the token is answered `405` at once: the server offers no stream to wait on.
 - **Give the server the gateway's own key** as its bearer token (`http.token_env`). Gateways usually drop the caller's
   `Authorization` and send a key of their own to each backend. With that key as the token, a request that reaches
   the server around the gateway is refused. If only the gateway can reach the server (a network policy),
@@ -110,7 +110,7 @@ repository that carries guidance says so.
 ```yaml
 services:
   repo-reader:
-    image: ghcr.io/alexeiveselov92/repo-reader-mcp:0.2.0
+    image: ghcr.io/alexeiveselov92/repo-reader-mcp:0.3.1
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
@@ -139,7 +139,7 @@ What the pod needs, in pieces:
 securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, runAsNonRoot: true }
 containers:
   - name: repo-reader
-    image: ghcr.io/alexeiveselov92/repo-reader-mcp:0.2.0
+    image: ghcr.io/alexeiveselov92/repo-reader-mcp:0.3.1
     ports: [{ containerPort: 8000 }]
     securityContext: { readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
     env:
@@ -166,7 +166,7 @@ folders in `safe.directory` of a git configuration the server reads:
 
 ```bash
 printf '[safe]\n\tdirectory = /repos/*\n' > config/gitconfig
-docker run … -v "$PWD/repos:/repos:ro" -e GIT_CONFIG_GLOBAL=/config/gitconfig ghcr.io/alexeiveselov92/repo-reader-mcp:0.2.0
+docker run … -v "$PWD/repos:/repos:ro" -e GIT_CONFIG_GLOBAL=/config/gitconfig ghcr.io/alexeiveselov92/repo-reader-mcp:0.3.1
 ```
 
 Name only the folders you mount: `safe.directory` stands guard against a repository someone else set up.

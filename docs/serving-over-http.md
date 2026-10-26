@@ -73,6 +73,9 @@ Bearer …" --method tools/list`).
 - **No session between requests.** Each request is answered on its own — the server keeps nothing about a client — so
   it can be restarted, or run as several copies behind a load balancer, without clients noticing.
 - **Plain JSON answers**, not event streams: what gateways and proxies pass through unchanged.
+- **No stream: a GET of `/mcp` is answered `405` at once**, with `Allow: POST`. The server is stateless and never sends
+  anything unasked, so a client only POSTs — one of the two answers MCP allows to that GET (from 0.3.1; before, the GET
+  was held open, empty, until the client gave up).
 - **Request ids as strings or numbers**, answered as they were sent — gateways often send strings.
 
 ## In a container, behind a gateway

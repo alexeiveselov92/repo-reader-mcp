@@ -77,6 +77,8 @@ with something visible: a real agent answering through the server.
       message across repositories, on every branch and tag, each with how it reached the default branch) and
       `list_refs` with `contains` (the branches and tags — releases — holding a commit); a history by message pages
       after leaving out commits whose message holds a secret.
+- [x] 0.3.1, 2026-10-26 — a GET of `/mcp` answered `405` at once (no stream), asked by a company's MCP gateway; the
+      image's CI try holds every image to it.
 - [ ] Docs for agents and for people who run it, completed by what the first deployment teaches; the next versions.
 
 ## Later

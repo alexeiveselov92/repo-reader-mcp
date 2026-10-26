@@ -27,6 +27,9 @@ CONFIG_VARIABLE = "REPO_READER_MCP_CONFIG"
 # Over HTTP, the one path answered without the token: whether the server is ready, and nothing else.
 HEALTH = "/health"
 
+# Over HTTP, where MCP is answered.
+MCP_PATH = "/mcp"
+
 INSTRUCTIONS = (
     "repo-reader-mcp reads code in git repositories and never changes them. Start with `list_repos`. Every tool "
     "takes `repo` (a name from list_repos); the reading tools take `ref` — any branch, tag or commit id — and read the "
@@ -176,10 +179,41 @@ class BearerToken:
         await self.app(scope, receive, send)
 
 
+class NoStream:
+    """A GET of the MCP path is answered `405` at once, with `Allow: POST`; every other request passes on unchanged.
+
+    Streamable HTTP lets a client GET the MCP path to open a stream on which the server sends it messages unasked, and
+    allows exactly two answers: open a `text/event-stream`, or `405 Method Not Allowed` — "this endpoint offers no
+    stream". A stateless server never sends anything on such a stream, yet the SDK, served stateless with JSON answers,
+    answers the GET `200` and holds an empty stream open until the client gives up. A gateway in front waits on it for
+    every server behind it; `405` tells it at once that a client only POSTs here. It sits inside the bearer token: a GET
+    without the token is still `401` and nothing else."""
+
+    BODY = b'{"error": "this server is stateless and offers no stream: send MCP messages with POST"}'
+
+    def __init__(self, app, path: str):
+        self.app = app
+        self.path = path.rstrip("/")
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["method"] == "GET" and scope["path"].rstrip("/") == self.path:
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 405,
+                    "headers": [(b"content-type", b"application/json"), (b"allow", b"POST")],
+                }
+            )
+            await send({"type": "http.response.body", "body": self.BODY})
+            return
+        await self.app(scope, receive, send)
+
+
 def http_app(server: MCPServer, config: Config, host: str):
     """The server as an ASGI app over Streamable HTTP at `/mcp`: no session kept between requests, plain JSON
-    answers; behind the bearer token when the configuration names one. A non-loopback address with neither a token
-    nor `behind_gateway: true` is refused — anyone who reaches the port could read the code."""
+    answers, no stream (a GET is answered `405`); behind the bearer token when the configuration names one. A
+    non-loopback address with neither a token nor `behind_gateway: true` is refused — anyone who reaches the port
+    could read the code."""
     guarded = bool(config.http.token_env or config.http.behind_gateway)
     if not guarded and host not in LOOPBACK:
         raise ConfigError(
@@ -193,7 +227,14 @@ def http_app(server: MCPServer, config: Config, host: str):
     # Guarded by a token or a gateway, any host name is answered — a proxy on the same machine forwards its own; open on
     # the machine's own address, only that address's names are (the SDK's guard against DNS rebinding).
     security = TransportSecuritySettings(enable_dns_rebinding_protection=False) if guarded else None
-    app = server.streamable_http_app(stateless_http=True, json_response=True, host=host, transport_security=security)
+    app = server.streamable_http_app(
+        streamable_http_path=MCP_PATH,
+        stateless_http=True,
+        json_response=True,
+        host=host,
+        transport_security=security,
+    )
+    app = NoStream(app, MCP_PATH)
     if config.http.token_env:
         token = os.environ.get(config.http.token_env, "")
         if not token:

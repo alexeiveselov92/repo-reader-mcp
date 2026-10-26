@@ -240,7 +240,10 @@ The public account is `docs/reference/safety.md`; each protection has a test tha
 
 stdio for one person's agent; Streamable HTTP for a shared server (built 2026-10-24 — `--http [HOST:]PORT`, the SDK's
 `streamable_http_app` at `/mcp`, **stateless** and with **JSON answers**: nothing kept between requests, so restarts and
-copies behind a load balancer are invisible to clients, and gateways pass plain JSON through). Who may call: a bearer
+copies behind a load balancer are invisible to clients, and gateways pass plain JSON through). **No stream** (0.3.1):
+a GET of `/mcp` (trailing slashes aside) is answered `405`, `Allow: POST`, by `NoStream` in front of the SDK's app —
+the SDK, stateless, answered it `200` and held an empty `text/event-stream` open until the client gave up, which a
+gateway waits on; the SDK's DELETE was already `405`. `NoStream` sits inside the bearer token. Who may call: a bearer
 token (`http.token_env`, an ASGI middleware comparing in constant time, `401` otherwise) or `http.behind_gateway: true`;
 on a non-loopback address one of them is required. On loopback the SDK's DNS-rebinding protection answers only
 `127.0.0.1` / `localhost` / `[::1]` as the Host. JSON-RPC ids may be strings or numbers. Checked with Claude Code and

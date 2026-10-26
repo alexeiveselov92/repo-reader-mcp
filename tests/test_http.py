@@ -189,6 +189,56 @@ def test_a_proxy_on_the_same_machine_is_answered(shop, monkeypatch):
     assert status == 200 and body["id"] == "gateway-7f"
 
 
+def get_at_once(url: str, headers: dict[str, str]) -> tuple[int, dict, bytes | None, float]:
+    """A GET given 3 seconds: its status, its headers, its body (None when it didn't come in time) and the seconds it
+    took. A stream held open is a slow answer here, never a hang."""
+    start = time.monotonic()
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=3) as response:
+            status, answer_headers = response.status, response.headers
+            try:
+                body = response.read()
+            except TimeoutError:
+                body = None
+    except urllib.error.HTTPError as error:
+        status, answer_headers, body = error.code, error.headers, error.read()
+    except (TimeoutError, urllib.error.URLError):
+        status, answer_headers, body = 0, {}, None
+    return status, {key.lower(): value for key, value in answer_headers.items()}, body, time.monotonic() - start
+
+
+@pytest.mark.parametrize("http", [{"token_env": "MCP_TOKEN"}, {"behind_gateway": True}])
+def test_a_get_of_mcp_is_answered_405_at_once(shop, monkeypatch, http):
+    """Streamable HTTP's GET opens a stream for the server's own messages; this server has none, and says so at once
+    instead of holding an empty stream open — a gateway in front would wait on it."""
+    _, app = guarded(shop[0], monkeypatch, **http)
+    token = {"Authorization": f"Bearer {TOKEN}"}
+    with serving(app) as url:
+        for path, accept in [(url, "text/event-stream"), (url, "*/*"), (url + "/", "text/event-stream")]:
+            status, headers, body, seconds = get_at_once(path, {**token, "Accept": accept})
+            assert (status, seconds < 1) == (405, True), (path, accept, status, round(seconds, 2))
+            assert headers["allow"] == "POST" and headers["content-type"] == "application/json"
+            assert "stateless" in json.loads(body)["error"] and "POST" in json.loads(body)["error"]
+        assert get_at_once(url + "x", token)[0] == 404  # another path is not the MCP path
+        status, body, _ = post(url, INITIALIZE, token)  # POST still answers
+        assert status == 200 and body["result"]["serverInfo"]["name"] == "repo-reader-mcp"
+        listing = {"jsonrpc": "2.0", "id": "list-1", "method": "tools/list", "params": {}}
+        status, body, _ = post(url, listing, {**token, "MCP-Protocol-Version": "2025-06-18"})
+        assert status == 200 and "read_file" in {tool["name"] for tool in body["result"]["tools"]}
+
+
+def test_a_get_of_mcp_without_the_token_is_401_and_nothing_else(shop, monkeypatch):
+    """The token stays outermost: before it, nothing — not even that the server offers no stream — is answered."""
+    _, app = guarded(shop[0], monkeypatch)
+    with serving(app) as url:
+        for headers in ({}, {"Authorization": "Bearer not-it"}):
+            for path in (url, url + "/"):
+                status, answer, body, seconds = get_at_once(path, {**headers, "Accept": "text/event-stream"})
+                assert (status, seconds < 1) == (401, True), (path, headers, status)
+                assert answer["www-authenticate"].startswith("Bearer") and "allow" not in answer
+                assert json.loads(body) == {"error": "a bearer token is needed"}
+
+
 def test_health_is_answered_without_the_token_and_says_nothing_else(shop, monkeypatch):
     _, app = guarded(shop[0], monkeypatch)
     with serving(app) as url:

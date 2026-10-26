@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tries the server's image the way a deployment runs it: read-only, without rights, mirroring this repository by https.
-# It must become ready, refuse a call without the token, and read a file with it.
+# It must become ready, refuse a call without the token, answer a GET of /mcp with 405 at once (no stream), and read a
+# file with the token.
 #
 #   .github/scripts/try-image.sh IMAGE [PLATFORM]      # PLATFORM: linux/amd64 (the default) or linux/arm64
 set -euo pipefail
@@ -25,6 +26,8 @@ for _ in $(seq 120); do
 done
 curl -fsS http://127.0.0.1:8000/health | grep -q '"ready"'
 test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/mcp)" = 401
+test "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H 'Authorization: Bearer made-up-token' \
+  -H 'Accept: text/event-stream' http://127.0.0.1:8000/mcp)" = 405
 curl -fsS -X POST http://127.0.0.1:8000/mcp -H 'Authorization: Bearer made-up-token' \
   -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":"try","method":"tools/call","params":{"name":"read_file","arguments":{"repo":"self","path":"LICENSE"}}}' \

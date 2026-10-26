@@ -376,3 +376,15 @@ id named any object in the store — a stash's commits, a commit amended away �
 tag or HEAD has its commit. Said, not changed: in a repository served in part, "in `main`" without a date tells that a
 merge not shown brought the commit, not which.
 
+## 2026-10-26 · A GET of `/mcp` is answered `405`: no stream (0.3.1)
+
+**Decision** (the author approved; asked by a company's MCP gateway, generalised). Streamable HTTP allows exactly two
+answers to a GET of the MCP endpoint: open a `text/event-stream` for the server's own messages, or `405 Method Not
+Allowed` — no stream here. The server is stateless and never sends anything unasked, yet the SDK, served stateless
+with JSON answers, answered `200` and held an empty stream open until the client gave up (8 s, by curl's limit; a POST
+took 2 ms). A gateway that probes or opens that stream for each backend waits on it. A small ASGI layer in front of the
+SDK's app (`NoStream`) answers the GET `405`, `Allow: POST`, with a short JSON body; everything else passes unchanged.
+It sits **inside** the bearer token: before the token, nothing is answered beyond `401`, not even that there is no
+stream. The same change is made in the sibling server, under a parallel name. The SDK's own answer was not patched:
+its newer-protocol path already answers `405`, and the next SDK may fix the older one — the layer then costs nothing.
+
