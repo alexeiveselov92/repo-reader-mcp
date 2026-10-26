@@ -8,8 +8,10 @@
 - Its first half is done: the container image, `/health` and the guide's page, released as 0.2.0.
 - Its second half, a company deploying it from its own repository, is in that company's hands.
 
-**0.3.0 is released** (PyPI and the image). **0.3.1 is committed, being released**: push `main`, wait for every workflow
-to go green, then push the tag `v0.3.1`.
+**0.3.1 is released** (2026-10-26): on PyPI and as the image `ghcr.io/alexeiveselov92/repo-reader-mcp:0.3.1`
+(amd64 and arm64, manifest `sha256:56c97d192bba…`, also tagged `sha-d8f4771`), every workflow green. The published
+image, run locally as a deployment runs it: `GET /mcp` with the token `405` in 1 ms, without it `401`; `POST`
+`initialize` 2 ms, `read_file` 36 ms.
 
 ## What 0.3.1 changes
 
@@ -17,7 +19,8 @@ Over HTTP, a GET of `/mcp` is answered `405` at once, with `Allow: POST` and a s
 and offers no stream. MCP's Streamable HTTP allows exactly two answers to that GET: open a `text/event-stream`, or
 `405`.
 - **Before:** the SDK, served stateless with JSON answers, answered `200` and held an empty event stream open until the
-  client gave up. Measured on loopback: 8.0 s, by curl's `--max-time`, with or without SSE in `Accept`, token or not.
+  client gave up. Measured on loopback: 8.0 s, by curl's `--max-time`, with or without SSE in `Accept`, served open
+  or behind a token.
   A POST `initialize` took 1.5–3.5 ms. The published 0.3.0 image did the same.
 - **Why it matters:** an MCP gateway in front of the server waits on that GET. It asked for `405`.
 - **How:** `NoStream` (`src/repo_reader_mcp/server.py`), a small ASGI layer in front of the SDK's app, compares the path
@@ -52,9 +55,7 @@ and offers no stream. MCP's Streamable HTTP allows exactly two answers to that G
 
 ## Next step
 
-1. **Release 0.3.1:** push `main`, wait for green, push the tag `v0.3.1`; check PyPI and the GHCR image `0.3.1`, then
-   run the published image and see `GET /mcp` answer `405` at once while `POST` still answers.
-2. **The deployment**, in the company's own repository: it moves to 0.3.1, which its gateway needs.
+1. **The deployment**, in the company's own repository: it runs 0.3.1, which its gateway needs.
    - Whatever it needs that the server lacks comes back here as general requirements with made-up examples.
    - When it is deployed, milestone 6 is done.
 
